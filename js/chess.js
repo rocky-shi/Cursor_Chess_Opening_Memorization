@@ -6,133 +6,178 @@ class ChessBoard {
         this.currentBranch = null;
         this.completedBranches = new Set();
         this.turnIndicator = null;
-        this.debugMode = false;
+        this.availableBranches = []; // 当前可用的分支
+        this.isStudyMode = false; // 是否在背谱模式
+        this.computerUsedBranches = new Set(); // 电脑已使用过的分支（用于白方第一步）
+        this.errorCount = 0; // 错误计数器
+        this.errorThreshold = 5; // 错误阈值，5次后提示正确走法
     }
 
     init() {
-        const config = {
-            position: 'start',
-            orientation: this.orientation,
-            draggable: true,
-            showNotation: false, // 禁用默认坐标
-            onDrop: (source, target, piece) => this.onPieceDrop(source, target, piece),
-            pieceTheme: (piece) => {
-                // 所有棋子都使用图片
-                const pieceImages = {
-                    'wK': 'img/white_King.png',
-                    'wQ': 'img/white_Queen.png',
-                    'wR': 'img/white_Rook.png',
-                    'wB': 'img/white_Bishop.png',
-                    'wN': 'img/white_Knight.png',
-                    'wP': 'img/white_Pawn.png',
-                    'bK': 'img/black_King.png',
-                    'bQ': 'img/black_Queen.png',
-                    'bR': 'img/black_Rook.png',
-                    'bB': 'img/black_Bishop.png',
-                    'bN': 'img/black_Knight.png',
-                    'bP': 'img/black_Pawn.png'
-                };
-                return pieceImages[piece];
-            }
-        };
+        // 立即尝试初始化，如果失败则重试
+        this.initializeBoard();
+    }
+
+    initializeBoard() {
+        console.log('Initializing chess board...');
         
-        this.board = Chessboard('board', config);
-        $(window).resize(() => this.board.resize());
-
-        // 添加棋子样式
-        const style = document.createElement('style');
-        style.textContent = `
-            .piece-417db {
-                font-size: 40px;
-                line-height: 40px;
-                text-align: center;
-                cursor: pointer;
-            }
-            /* 调整图片大小以适应棋盘格子 */
-            .piece-417db img {
-                width: 100%;
-                height: 100%;
-                object-fit: contain;
-                padding: 5px;
-            }
-        `;
-        document.head.appendChild(style);
-
-        // 创建回合指示器
-        this.createTurnIndicator();
-        this.updateTurnIndicator();
-
-        // 添加自定义坐标
-        this.createCustomNotation();
-    }
-
-    createTurnIndicator() {
-        // 如果已存在则移除
-        $('.turn-indicator').remove();
+        const boardElement = document.getElementById('board');
         
-        // 创建新的指示器
-        this.turnIndicator = $('<div class="turn-indicator"></div>');
-        $('.board-container').append(this.turnIndicator);
-    }
-
-    updateTurnIndicator() {
-        if (!this.turnIndicator) return;
-        
-        const isWhiteTurn = this.game.turn() === 'w';
-        this.turnIndicator
-            .removeClass('turn-white turn-black')
-            .addClass(isWhiteTurn ? 'turn-white' : 'turn-black');
-    }
-
-    setOrientation(color) {
-        this.orientation = color;
-        this.board.orientation(color);
-        this.updateTurnIndicator();
-        // 重新创建坐标以适应新的方向
-        setTimeout(() => this.createCustomNotation(), 0);
-    }
-
-    onPieceDrop(source, target, piece) {
-        // 检查是否是用户的回合
-        const isWhiteTurn = this.game.turn() === 'w';
-        if ((this.orientation === 'white' && !isWhiteTurn) ||
-            (this.orientation === 'black' && isWhiteTurn)) {
-            return 'snapback';
+        if (!boardElement) {
+            console.error('Board element not found');
+            // 如果元素还没准备好，稍后重试
+            setTimeout(() => this.initializeBoard(), 200);
+            return;
         }
 
+        if (typeof Chessboard === 'undefined') {
+            console.error('Chessboard.js library not loaded');
+            // 如果库还没加载，稍后重试
+            setTimeout(() => this.initializeBoard(), 200);
+            return;
+        }
+        
+        try {
+            // 清除可能存在的旧棋盘
+            $(boardElement).empty();
+            
+            // 保存this引用
+            const self = this;
+            
+            // 配置棋盘
+            const config = {
+                draggable: true,
+                position: 'start',
+                onDragStart: function(source, piece, position, orientation) {
+                    return self.onDragStart(source, piece, position, orientation);
+                },
+                onDrop: function(source, target, piece, newPos, oldPos, orientation) {
+                    return self.onDrop(source, target);
+                },
+                onSnapEnd: function() {
+                    return self.onSnapEnd();
+                },
+                pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
+                showNotation: true,
+                sparePieces: false
+            };
+            
+            console.log('Creating chessboard with config:', config);
+            this.board = Chessboard('board', config);
+            
+            // 等待一小段时间确保棋盘完全渲染
+            setTimeout(() => {
+                if (this.board) {
+                    console.log('Chessboard initialized successfully');
+                    
+                    // 设置初始位置
+                    this.board.position('start');
+                    
+                    // 创建回合指示器
+                    this.createTurnIndicator();
+                    this.updateTurnIndicator();
+                    
+                    // 调整棋盘大小以确保正确显示
+                    try {
+                        this.board.resize();
+                        console.log('Board resized successfully');
+                    } catch (e) {
+                        console.warn('Board resize failed:', e);
+                    }
+                } else {
+                    console.error('Chessboard initialization failed, retrying...');
+                    setTimeout(() => this.initializeBoard(), 500);
+                }
+            }, 100);
+            
+        } catch (error) {
+            console.error('Error initializing chessboard:', error);
+            setTimeout(() => this.initializeBoard(), 500);
+        }
+    }
+
+    onDragStart(source, piece, position, orientation) {
+        // 如果游戏结束，不允许移动
+        if (this.game.game_over()) return false;
+        
+        // 如果不在背谱模式，允许自由拖拽
+        if (!this.isStudyMode) {
+            // 只允许拖拽当前方的棋子
+            if ((this.game.turn() === 'w' && piece.search(/^b/) !== -1) ||
+                (this.game.turn() === 'b' && piece.search(/^w/) !== -1)) {
+                return false;
+            }
+            return true;
+        }
+
+        // 背谱模式下的拖拽限制
+        const isWhiteTurn = this.game.turn() === 'w';
+        const canMove = (this.orientation === 'white' && isWhiteTurn) ||
+                        (this.orientation === 'black' && !isWhiteTurn);
+        
+        if (!canMove) return false;
+        
+        // 只允许拖拽当前方的棋子
+        if ((this.game.turn() === 'w' && piece.search(/^b/) !== -1) ||
+            (this.game.turn() === 'b' && piece.search(/^w/) !== -1)) {
+            return false;
+        }
+        
+        return true;
+    }
+
+    onDrop(source, target) {
+        console.log(`Move attempted: ${source} to ${target}`);
+        
         // 尝试移动
         const move = this.game.move({
             from: source,
             to: target,
-            promotion: 'q'
+            promotion: 'q' // 默认升为皇后
         });
 
         // 如果移动不合法
         if (move === null) {
+            console.log('Illegal move');
             return 'snapback';
         }
 
-        // 检查移动是否符合当前PGN分支
-        if (!this.isValidMove(move)) {
-            this.game.undo();
+        console.log('Legal move:', move);
+
+        // 如果不在背谱模式，允许自由下棋
+        if (!this.isStudyMode) {
+            this.updateMoveHistory(move);
+            this.updateTurnIndicator();
+            return;
+        }
+
+        // 背谱模式下检查移动是否正确
+        const matchingBranch = this.findMatchingBranch(move);
+        
+        if (!matchingBranch) {
+            // 没有匹配的分支，走错了
+            console.log('No matching branch found');
+            this.game.undo(); // 撤销移动
             this.showError();
             return 'snapback';
         }
 
+        console.log('Found matching branch');
+
+        // 走对了，重置错误计数器
+        this.errorCount = 0;
+
+        // 更新当前分支
+        this.currentBranch = matchingBranch;
+        this.updateAvailableBranches();
+
         // 更新界面
         this.updateMoveHistory(move);
         this.updateTurnIndicator();
-        if (this.debugMode) {
-            this.updateDebugDisplay();
-        }
         
         // 检查是否完成当前分支
         if (this.isCurrentBranchCompleted()) {
-            this.completedBranches.add(this.currentBranch.id);
-            this.updateProgress();
-            if (this.debugMode) {
-                this.updateDebugDisplay();
-            }
+            this.onBranchCompleted();
             return;
         }
 
@@ -140,10 +185,51 @@ class ChessBoard {
         setTimeout(() => this.makeComputerMove(), 500);
     }
 
-    isValidMove(move) {
-        if (!this.currentBranch) return false;
-        const expectedMove = this.currentBranch.moves[this.game.history().length - 1];
-        return move.san === expectedMove;
+    onSnapEnd() {
+        // 确保棋盘位置与游戏状态同步
+        if (this.board) {
+            this.board.position(this.game.fen());
+        }
+    }
+
+    findMatchingBranch(move) {
+        const currentHistory = this.game.history();
+        const moveIndex = currentHistory.length - 1;
+        
+        // 在可用分支中查找匹配的分支
+        for (const branch of this.availableBranches) {
+            if (branch.moves[moveIndex] === move.san) {
+                return branch;
+            }
+        }
+        
+        return null;
+    }
+
+    updateAvailableBranches() {
+        if (!window.pgnParser || !window.pgnParser.branches) {
+            this.availableBranches = [];
+            return;
+        }
+
+        const currentHistory = this.game.history();
+        
+        // 筛选出与当前历史匹配且未完成的分支
+        this.availableBranches = window.pgnParser.branches.filter(branch => {
+            // 跳过已完成的分支
+            if (this.completedBranches.has(branch.id)) {
+                return false;
+            }
+            
+            // 检查历史是否匹配
+            for (let i = 0; i < currentHistory.length; i++) {
+                if (i >= branch.moves.length || branch.moves[i] !== currentHistory[i]) {
+                    return false;
+                }
+            }
+            
+            return true;
+        });
     }
 
     makeComputerMove() {
@@ -155,21 +241,50 @@ class ChessBoard {
         if (nextMove) {
             const move = this.game.move(nextMove);
             if (move) {
-                this.board.position(this.game.fen());
+                if (this.board) {
+                    this.board.position(this.game.fen()); // 更新棋盘位置
+                }
                 this.updateMoveHistory(move);
                 this.updateTurnIndicator();
                 
+                // 更新可用分支
+                this.updateAvailableBranches();
+                
                 // 检查电脑走完后是否完成分支
                 if (this.isCurrentBranchCompleted()) {
-                    this.completedBranches.add(this.currentBranch.id);
-                    this.updateProgress();
-                }
-                
-                if (this.debugMode) {
-                    this.updateDebugDisplay();
+                    this.onBranchCompleted();
+                    return;
                 }
             }
         }
+    }
+
+    createTurnIndicator() {
+        this.turnIndicator = document.getElementById('turnIndicator');
+        if (!this.turnIndicator) {
+            this.turnIndicator = document.createElement('div');
+            this.turnIndicator.id = 'turnIndicator';
+            this.turnIndicator.className = 'turn-indicator';
+            const boardContainer = document.querySelector('.board-container');
+            if (boardContainer) {
+                boardContainer.appendChild(this.turnIndicator);
+            }
+        }
+    }
+
+    updateTurnIndicator() {
+        if (!this.turnIndicator) return;
+        
+        const isWhiteTurn = this.game.turn() === 'w';
+        this.turnIndicator.className = `turn-indicator ${isWhiteTurn ? 'turn-white' : 'turn-black'}`;
+    }
+
+    setOrientation(color) {
+        this.orientation = color;
+        if (this.board) {
+            this.board.orientation(color);
+        }
+        this.updateTurnIndicator();
     }
 
     updateMoveHistory(move) {
@@ -201,352 +316,240 @@ class ChessBoard {
     }
 
     showError() {
-        $('#errorToast').fadeIn().delay(2000).fadeOut();
-        if (this.debugMode && this.currentBranch) {
-            const expectedMove = this.currentBranch.moves[this.game.history().length];
-            $('#errorToast').text(`您背错了！正确走法是: ${expectedMove}`);
+        this.errorCount++;
+        
+        let errorMessage = `您背错了！这是第${this.errorCount}次错误。`;
+        
+        // 只有在错误次数达到阈值时才显示正确走法
+        if (this.errorCount >= this.errorThreshold) {
+            const possibleMoves = this.getPossibleMoves();
+            if (possibleMoves.length > 0) {
+                errorMessage += ` 正确走法有: ${possibleMoves.join(', ')}`;
+            }
+            // 重置错误计数器
+            this.errorCount = 0;
+        } else {
+            errorMessage += ` 再错${this.errorThreshold - this.errorCount}次将提示正确走法。`;
         }
+        
+        $('#errorToast').text(errorMessage).fadeIn().delay(3000).fadeOut();
+    }
+
+    getPossibleMoves() {
+        const currentHistory = this.game.history();
+        const moveIndex = currentHistory.length;
+        const possibleMoves = new Set();
+        
+        // 收集所有可用分支在当前位置的可能走法
+        for (const branch of this.availableBranches) {
+            if (moveIndex < branch.moves.length) {
+                possibleMoves.add(branch.moves[moveIndex]);
+            }
+        }
+        
+        return Array.from(possibleMoves);
     }
 
     resetPosition() {
         this.game.reset();
-        this.board.position('start');
+        if (this.board) {
+            this.board.position('start');
+        }
         $('#moveHistory').empty();
         this.updateTurnIndicator();
+        this.currentBranch = null;
+        this.errorCount = 0; // 重置错误计数器
+        
+        if (this.isStudyMode) {
+            this.updateAvailableBranches();
+            
+            // 如果用户选择黑方，电脑先走
+            if (this.orientation === 'black' && this.availableBranches.length > 0) {
+                setTimeout(() => this.makeFirstComputerMove(), 500);
+            }
+        }
+    }
+
+    makeFirstComputerMove() {
+        if (!this.isStudyMode || this.availableBranches.length === 0) return;
+        
+        // 获取第一手可能的走法和对应的分支
+        const firstMoveOptions = new Map(); // 走法 -> 对应的分支数组
+        
+        for (const branch of this.availableBranches) {
+            if (branch.moves.length > 0) {
+                const firstMove = branch.moves[0];
+                if (!firstMoveOptions.has(firstMove)) {
+                    firstMoveOptions.set(firstMove, []);
+                }
+                firstMoveOptions.get(firstMove).push(branch);
+            }
+        }
+        
+        // 筛选出未使用过的走法
+        const unusedMoves = [];
+        for (const [move, branches] of firstMoveOptions) {
+            // 检查这个走法对应的分支是否都被使用过了
+            const hasUnusedBranch = branches.some(branch => !this.computerUsedBranches.has(branch.id));
+            if (hasUnusedBranch) {
+                unusedMoves.push(move);
+            }
+        }
+        
+        // 如果所有分支都用过了，重置已使用记录
+        if (unusedMoves.length === 0) {
+            this.computerUsedBranches.clear();
+            // 重新获取所有第一手走法
+            for (const [move] of firstMoveOptions) {
+                unusedMoves.push(move);
+            }
+        }
+        
+        // 随机选择一个未使用的走法
+        if (unusedMoves.length > 0) {
+            const randomMove = unusedMoves[Math.floor(Math.random() * unusedMoves.length)];
+            const correspondingBranches = firstMoveOptions.get(randomMove);
+            
+            // 从对应分支中选择一个未使用的分支（如果有的话）
+            let selectedBranch = null;
+            for (const branch of correspondingBranches) {
+                if (!this.computerUsedBranches.has(branch.id)) {
+                    selectedBranch = branch;
+                    break;
+                }
+            }
+            
+            // 如果没找到未使用的分支，就选第一个
+            if (!selectedBranch) {
+                selectedBranch = correspondingBranches[0];
+            }
+            
+            // 标记这个分支为已使用
+            this.computerUsedBranches.add(selectedBranch.id);
+            
+            // 执行走棋
+            const move = this.game.move(randomMove);
+            if (move) {
+                if (this.board) {
+                    this.board.position(this.game.fen()); // 更新棋盘位置
+                }
+                this.updateMoveHistory(move);
+                this.updateTurnIndicator();
+                this.updateAvailableBranches();
+                
+                // 显示提示信息
+                const message = `电脑选择了走法: ${randomMove}。现在轮到您走棋了！`;
+                $('#errorToast').text(message).css('background', '#17a2b8').fadeIn().delay(2000).fadeOut().promise().done(() => {
+                    $('#errorToast').css('background', '#ff4444');
+                });
+            }
+        }
     }
 
     updateProgress() {
-        const total = window.pgnParser.getTotalBranches();
+        // 直接使用branches数组的长度，因为window.pgnParser现在是后端响应对象
+        const total = window.pgnParser && window.pgnParser.branches ? window.pgnParser.branches.length : 0;
         const completed = this.completedBranches.size;
-        const progress = Math.round((completed / total) * 100);
+        const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
         
         $('#totalBranches').text(total);
         $('#completedBranches').text(completed);
         $('#progress').text(`${progress}%`);
         
-        if (progress === 100) {
+        if (progress === 100 && total > 0) {
             $('#completionBanner').show();
         }
     }
 
     isCurrentBranchCompleted() {
-        const completed = this.game.history().length === this.currentBranch.moves.length;
-        if (completed && this.debugMode) {
-            this.updateDebugDisplay();
-        }
-        return completed;
+        if (!this.currentBranch) return false;
+        return this.game.history().length === this.currentBranch.moves.length;
     }
 
-    createCustomNotation() {
-        const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
-        const ranks = ['1', '2', '3', '4', '5', '6', '7', '8'];
-        const boardElement = $('#board');
-        const squareSize = boardElement.width() / 8;
-
-        // 移除现有的坐标
-        $('.notation-322f9').remove();
-
-        // 添加文件坐标 (a-h)
-        files.forEach((file, i) => {
-            const notation = $('<div class="notation-322f9 alpha"></div>')
-                .text(file)
-                .css('left', (i * squareSize) + (squareSize / 2) + 'px');
-            boardElement.append(notation);
-        });
-
-        // 添加行坐标 (1-8)
-        ranks.forEach((rank, i) => {
-            const notation = $('<div class="notation-322f9 numeric"></div>')
-                .text(rank)
-                .css('top', ((7-i) * squareSize) + (squareSize / 2) + 'px');
-            boardElement.append(notation);
-        });
+    onBranchCompleted() {
+        // 标记当前分支为已完成
+        this.completedBranches.add(this.currentBranch.id);
+        this.updateProgress();
+        
+        // 显示分支完成模态框
+        this.showBranchCompletedModal();
+        
+        // 2秒后自动回到初始位置
+        setTimeout(() => {
+            this.resetPosition();
+        }, 2000);
     }
 
-    toggleDebugMode() {
-        this.debugMode = !this.debugMode;
-        $('#debugPanel').toggleClass('active', this.debugMode);
-        if (this.debugMode) {
-            this.updateDebugDisplay();
-        }
+    showBranchCompletedModal() {
+        const modal = $(`
+            <div class="modal-overlay">
+                <div class="modal-content">
+                    <h3>🎉 分支背诵完成！</h3>
+                    <p>恭喜您成功背完了当前分支！</p>
+                    <p>即将自动回到初始位置...</p>
+                </div>
+            </div>
+        `);
+        
+        $('body').append(modal);
+        
+        // 2秒后自动移除模态框
+        setTimeout(() => {
+            modal.remove();
+        }, 2000);
     }
 
-    updateDebugDisplay() {
-        if (!this.debugMode) return;
-
-        const $debugMoves = $('#debugMoves');
-        $debugMoves.empty();
-
-        window.pgnParser.branches.forEach((branch, index) => {
-            const $branch = $('<div>')
-                .addClass('debug-branch')
-                .attr('data-branch-id', branch.id);
-
-            if (this.completedBranches.has(branch.id)) {
-                $branch.addClass('completed');
-            }
-
-            // 添加分支标题
-            $branch.append($('<div>').text(`分支 ${index + 1}:`));
-
-            // 添加所有走法
-            branch.moves.forEach((move, moveIndex) => {
-                const moveNumber = Math.floor(moveIndex / 2) + 1;
-                const isWhiteMove = moveIndex % 2 === 0;
-
-                // 添加回合数
-                if (isWhiteMove) {
-                    $branch.append($('<span>').text(`${moveNumber}. `));
-                }
-
-                // 添加走法
-                const $move = $('<span>')
-                    .addClass('debug-move')
-                    .text(move);
-
-                // 如果是当前分支的当前走法，高亮显示
-                if (branch.id === this.currentBranch?.id && 
-                    moveIndex === this.game.history().length) {
-                    $move.addClass('current');
-                }
-
-                $branch.append($move);
-
-                // 在黑方走法后添加空格
-                if (!isWhiteMove) {
-                    $branch.append(' ');
-                }
+    startStudy() {
+        // 检查是否有PGN数据
+        if (!window.pgnParser || !window.pgnParser.branches || window.pgnParser.branches.length === 0) {
+            const message = '请先加载PGN文件！';
+            $('#errorToast').text(message).css('background', '#dc3545').fadeIn().delay(3000).fadeOut().promise().done(() => {
+                $('#errorToast').css('background', '#ff4444');
             });
-
-            // 如果分支已完成，添加状态标记
-            if (this.completedBranches.has(branch.id)) {
-                $branch.append(
-                    $('<span>')
-                        .addClass('debug-branch-status')
-                        .text('已背完')
-                );
-            }
-
-            $debugMoves.append($branch);
-        });
-    }
-}
-
-class PGNParser {
-    constructor() {
-        this.branches = [];
-        this.currentBranchIndex = -1;
-    }
-
-    async loadPGN(file) {
-        try {
-            const text = await this.readFile(file);
-            this.parsePGN(text);
-            return true;
-        } catch (error) {
-            console.error('PGN解析错误:', error);
             return false;
         }
-    }
 
-    async readFile(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (e) => resolve(e.target.result);
-            reader.onerror = (e) => reject(e);
-            reader.readAsText(file);
-        });
-    }
-
-    parsePGN(text) {
-        this.branches = [];
+        this.isStudyMode = true;
+        this.resetPosition(); // 这会自动更新可用分支
+        this.errorCount = 0; // 重置错误计数器
         
-        // 移除头部信息和注释
-        text = text.replace(/\[[^\]]*\]/g, '').trim();
-        text = text.replace(/\{[^}]*\}/g, '');
-        
-        // 找到第一个变体的位置
-        const firstVariantStart = text.indexOf('(');
-        if (firstVariantStart === -1) {
-            // 没有变体，只有主线
-            const mainBranch = this.parseMoveLine(text, 'main');
-            if (mainBranch.moves.length > 0) {
-                this.branches.push(mainBranch);
-            }
-            this.updatePGNDisplay();
-            return;
-        }
-        
-        // 解析主线（到最后）
-        const mainLine = text.replace(/\([^()]*\)/g, '').trim();
-        const mainGame = new Chess();
-        const mainBranch = {
-            id: 'main',
-            moves: []
-        };
-        
-        // 解析主线的所有移动
-        const mainMatches = mainLine.match(/\d+\.\s+[^\s]+(\s+[^\s]+)?/g) || [];
-        mainMatches.forEach(moveText => {
-            const parts = moveText.trim().split(/\s+/);
-            parts.shift(); // 移除回合数字
-            parts.forEach(move => {
-                if (move && move !== '.') {
-                    const result = mainGame.move(move);
-                    if (result) {
-                        mainBranch.moves.push(result.san);
-                    }
-                }
+        // 再次检查是否有可用分支
+        if (this.availableBranches.length === 0) {
+            const message = '没有可用的分支进行背谱！可能所有分支都已完成。';
+            $('#errorToast').text(message).css('background', '#ffc107').fadeIn().delay(3000).fadeOut().promise().done(() => {
+                $('#errorToast').css('background', '#ff4444');
             });
-        });
-        
-        if (mainBranch.moves.length > 0) {
-            this.branches.push(mainBranch);
+            this.isStudyMode = false;
+            return false;
         }
         
-        // 解析变体
-        let depth = 0;
-        let variantStart = -1;
-        let currentVariant = '';
-        let commonMoves = [];
-        
-        for (let i = 0; i < text.length; i++) {
-            if (text[i] === '(') {
-                if (depth === 0) {
-                    variantStart = i;
-                    currentVariant = '';
-                    
-                    // 找到这个变体之前的所有移动
-                    const beforeVariant = text.substring(0, i);
-                    commonMoves = this.getMovesUpToPosition(beforeVariant);
-                }
-                depth++;
-            } else if (text[i] === ')') {
-                depth--;
-                if (depth === 0 && variantStart !== -1) {
-                    // 解析这个变体
-                    const variantGame = new Chess();
-                    const variantBranch = {
-                        id: `variant_${this.branches.length}`,
-                        moves: [...commonMoves] // 先添加共同的移动
-                    };
-                    
-                    // 执行共同的移动
-                    commonMoves.forEach(move => {
-                        variantGame.move(move);
-                    });
-                    
-                    // 解析变体特有的移动
-                    const variantText = currentVariant.trim();
-                    const variantMatches = variantText.match(/\d+\.\s+[^\s]+(\s+[^\s]+)?/g) || [];
-                    variantMatches.forEach(moveText => {
-                        const parts = moveText.trim().split(/\s+/);
-                        parts.shift(); // 移除回合数字
-                        parts.forEach(move => {
-                            if (move && move !== '.') {
-                                const result = variantGame.move(move);
-                                if (result) {
-                                    variantBranch.moves.push(result.san);
-                                }
-                            }
-                        });
-                    });
-                    
-                    if (variantBranch.moves.length > commonMoves.length) {
-                        this.branches.push(variantBranch);
-                    }
-                }
-            } else if (depth > 0) {
-                currentVariant += text[i];
+        // 显示提示信息
+        if (this.orientation === 'black') {
+            // 黑方视角，电脑会先走
+            const message = `背谱模式已开启！电脑将随机选择一个分支走出白方第一步，然后您进行背谱练习。`;
+            $('#errorToast').text(message).css('background', '#28a745').fadeIn().delay(3000).fadeOut().promise().done(() => {
+                $('#errorToast').css('background', '#ff4444');
+            });
+        } else {
+            // 白方视角，显示可能的走法
+            const possibleMoves = this.getPossibleMoves();
+            if (possibleMoves.length > 0) {
+                const message = `背谱模式已开启！根据您的走棋自动匹配分支。当前可能的走法: ${possibleMoves.join(', ')}`;
+                $('#errorToast').text(message).css('background', '#28a745').fadeIn().delay(3000).fadeOut().promise().done(() => {
+                    $('#errorToast').css('background', '#ff4444');
+                });
             }
         }
         
-        this.updatePGNDisplay();
+        return true;
     }
 
-    getMovesUpToPosition(text) {
-        const moves = [];
-        const tempGame = new Chess();
-        
-        const matches = text.match(/\d+\.\s+[^\s]+(\s+[^\s]+)?/g) || [];
-        matches.forEach(moveText => {
-            const parts = moveText.trim().split(/\s+/);
-            parts.shift(); // 移除回合数字
-            parts.forEach(move => {
-                if (move && move !== '.') {
-                    const result = tempGame.move(move);
-                    if (result) {
-                        moves.push(result.san);
-                    }
-                }
-            });
-        });
-        
-        return moves;
-    }
-
-    updatePGNDisplay() {
-        const $pgnDisplay = $('#pgnDisplay');
-        let displayText = '';
-        
-        this.branches.forEach((branch, index) => {
-            displayText += `分支 ${index + 1}:\n`;
-            
-            // 格式化移动
-            let formattedMoves = '';
-            branch.moves.forEach((move, moveIndex) => {
-                if (moveIndex % 2 === 0) {
-                    formattedMoves += `${Math.floor(moveIndex / 2) + 1}. `;
-                }
-                formattedMoves += `${move} `;
-            });
-            
-            displayText += formattedMoves + '\n\n';
-        });
-        
-        $pgnDisplay.val(displayText);
-    }
-
-    parseMoveLine(line, id) {
-        const tempGame = new Chess();
-        const branch = {
-            id: id,
-            moves: []
-        };
-        
-        // 移除结果标记
-        line = line.replace(/\s*[012/\*]+-[012/\*]+\s*$/, '');
-        
-        // 提取所有走法
-        const moves = line.match(/\d+\.\s+[^\s]+(\s+[^\s]+)?/g) || [];
-        moves.forEach(moveText => {
-            const parts = moveText.trim().split(/\s+/);
-            parts.shift(); // 移除回合数字
-            parts.forEach(move => {
-                if (move && move !== '.') {
-                    const result = tempGame.move(move);
-                    if (result) {
-                        branch.moves.push(result.san);
-                    }
-                }
-            });
-        });
-        
-        return branch;
-    }
-
-    getNextUncompletedBranch(completedBranches) {
-        const uncompletedBranches = this.branches.filter(
-            branch => !completedBranches.has(branch.id)
-        );
-        
-        if (uncompletedBranches.length === 0) return null;
-        
-        this.currentBranchIndex = (this.currentBranchIndex + 1) % uncompletedBranches.length;
-        return uncompletedBranches[this.currentBranchIndex];
-    }
-
-    getTotalBranches() {
-        return this.branches.length;
+    stopStudy() {
+        this.isStudyMode = false;
+        this.currentBranch = null;
+        this.availableBranches = [];
+        this.computerUsedBranches.clear(); // 清空电脑已使用的分支记录
+        this.errorCount = 0; // 重置错误计数器
+        return true;
     }
 } 

@@ -1,0 +1,157 @@
+.tree-container.horizontal {
+    padding: 20px;
+    font-family: Arial, sans-serif;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+.tree-node {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    margin: 5px 0;
+}
+
+.node-wrapper {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    position: relative;
+}
+
+.node-content {
+    background: #f5f5f5;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin: 2px;
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 100px;
+    white-space: nowrap;
+    z-index: 1;
+}
+
+.white-move .node-content {
+    background: #fff;
+    border-color: #ccc;
+}
+
+.black-move .node-content {
+    background: #f0f0f0;
+    border-color: #ddd;
+}
+
+.root-node .node-content {
+    background: #e8f5e9;
+    border-color: #a5d6a7;
+}
+
+.move-number {
+    color: #666;
+    font-size: 0.9em;
+}
+
+.move-text {
+    font-weight: bold;
+    color: #333;
+}
+
+.expand-button {
+    cursor: pointer;
+    width: 20px;
+    height: 20px;
+    line-height: 18px;
+    text-align: center;
+    border: 1px solid #ccc;
+    border-radius: 50%;
+    position: absolute;
+    right: -10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: #fff;
+    z-index: 2;
+}
+
+.expand-button:hover {
+    background: #f0f0f0;
+}
+
+.children-container {
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    margin-left: 40px;
+    padding-left: 20px;
+}
+
+.children-container.collapsed {
+    display: none;
+}
+
+/* 水平连接线：从父节点到子节点区域 */
+.node-wrapper::after {
+    content: '';
+    position: absolute;
+    left: 100%;
+    top: 50%;
+    width: 40px;
+    height: 2px;
+    background: #ccc;
+    z-index: 0;
+}
+
+/* 如果没有子节点，不显示连接线 */
+.tree-node:not(:has(.children-container)) .node-wrapper::after {
+    display: none;
+}
+
+/* 垂直连接线：连接多个兄弟节点 */
+.children-container::before {
+    content: '';
+    position: absolute;
+    left: -20px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: #ccc;
+    z-index: 0;
+}
+
+/* 只有一个子节点时不显示垂直线 */
+.children-container:has(.tree-node:only-child)::before {
+    display: none;
+}
+
+/* 每个子节点的水平连接线 */
+.children-container > .tree-node > .node-wrapper::before {
+    content: '';
+    position: absolute;
+    left: -20px;
+    top: 50%;
+    width: 20px;
+    height: 2px;
+    background: #ccc;
+    z-index: 0;
+}
+
+/* 添加滚动条样式 */
+.tree-container::-webkit-scrollbar {
+    height: 8px;
+}
+
+.tree-container::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.tree-container::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+.tree-container::-webkit-scrollbar-thumb:hover {
+    background: #555;
+} 

@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>棋谱树状结构测试</title>
+    <link rel="stylesheet" href="css/tree.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f8f9fa;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .test-buttons {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        
+        .btn {
+            padding: 10px 20px;
+            margin: 0 10px;
+            border: none;
+            border-radius: 4px;
+            background: #007bff;
+            color: white;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        
+        .btn:hover {
+            background: #0056b3;
+        }
+        
+        #results {
+            margin-top: 20px;
+            padding: 20px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        
+        .error {
+            color: #dc3545;
+            padding: 10px;
+            border: 1px solid #dc3545;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        
+        .info-panel {
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .info-panel h3 {
+            margin: 0 0 10px 0;
+            color: #333;
+        }
+        
+        .info-panel p {
+            margin: 0;
+            color: #666;
+        }
+        
+        .info-panel strong {
+            color: #007bff;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>棋谱树状结构测试</h1>
+        <p>这个页面用于测试PGN棋谱的树状结构解析和展示功能</p>
+    </div>
+    
+    <div class="test-buttons">
+        <button class="btn" onclick="testPGNTree()">测试棋谱树状结构</button>
+        <button class="btn" onclick="uploadPGN()">上传PGN文件测试</button>
+    </div>
+    
+    <input type="file" id="pgnFileInput" accept=".pgn,.txt" style="display: none;">
+    
+    <div id="results"></div>
+    
+    <script src="js/tree.js"></script>
+    <script>
+        const API_BASE = 'http://localhost:5000/api';
+        
+        async function testPGNTree() {
+            showLoading();
+            
+            try {
+                const response = await fetch(`${API_BASE}/test-tree`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayResults(data);
+                } else {
+                    showError(data.error || '测试失败');
+                }
+            } catch (error) {
+                showError(`网络错误: ${error.message}`);
+            }
+        }
+        
+        function uploadPGN() {
+            document.getElementById('pgnFileInput').click();
+        }
+        
+        document.getElementById('pgnFileInput').addEventListener('change', async function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            showLoading();
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                const response = await fetch(`${API_BASE}/parse-pgn`, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    displayResults(data);
+                } else {
+                    showError(data.error || '解析失败');
+                }
+            } catch (error) {
+                showError(`网络错误: ${error.message}`);
+            }
+        });
+        
+        function showLoading() {
+            document.getElementById('results').innerHTML = '<div class="loading">正在处理中...</div>';
+        }
+        
+        function showError(message) {
+            document.getElementById('results').innerHTML = `<div class="error">${message}</div>`;
+        }
+        
+        function displayResults(data) {
+            const resultsDiv = document.getElementById('results');
+            if (!data || !data.tree_html) {
+                showError('无效的数据格式');
+                return;
+            }
+            resultsDiv.innerHTML = data.tree_html;
+            
+            // 添加分支信息
+            if (data.total_branches) {
+                const infoDiv = document.createElement('div');
+                infoDiv.className = 'branch-info';
+                infoDiv.innerHTML = `
+                    <div class="info-panel">
+                        <h3>分支信息</h3>
+                        <p>总分支数: <strong>${data.total_branches}</strong></p>
+                    </div>
+                `;
+                resultsDiv.insertBefore(infoDiv, resultsDiv.firstChild);
+            }
+        }
+    </script>
+</body>
+</html> 
