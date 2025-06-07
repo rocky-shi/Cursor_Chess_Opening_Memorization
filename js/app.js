@@ -5,16 +5,88 @@ $(document).ready(function() {
     window.chessBoard = new ChessBoard();
     
     // 隐藏加载屏幕并显示主内容
-    setTimeout(() => {
-        $('#loadingScreen').fadeOut(300, () => {
-            $('#mainContainer').fadeIn(300, () => {
+    setTimeout(async () => {
+        $('#loadingScreen').fadeOut(300, async () => {
+            $('#mainContainer').fadeIn(300, async () => {
                 console.log('Main container visible, initializing chess board...');
                 // 在主容器显示后初始化棋盘
                 window.chessBoard.init();
                 
-                // 如果有保存的PGN数据，自动加载
-                if (window.pgnParser && window.pgnParser.branches && window.pgnParser.branches.length > 0) {
-                    updateUI();
+                // 初始化API（检测后端连接和加载本地存储）
+                const hasStoredData = await window.chessAPI.init();
+                
+                // 移动端UI优化
+                if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+                    // 隐藏移动端不需要的按钮
+                    const loadPgnBtn = document.getElementById('loadPgn');
+                    const clearStorageBtn = document.getElementById('clearStorage');
+                    
+                    if (loadPgnBtn) {
+                        loadPgnBtn.style.display = 'none';
+                        console.log('移动端：隐藏加载对局按钮');
+                    }
+                    if (clearStorageBtn) {
+                        clearStorageBtn.style.display = 'none';
+                        console.log('移动端：隐藏清除棋谱按钮');
+                    }
+                }
+                
+                // 更新UI状态
+                updateUI();
+                
+                // 如果从本地存储恢复了数据，再次确保UI正确更新
+                if (hasStoredData && window.pgnParser) {
+                    console.log('检测到本地存储数据，确保UI正确更新');
+                    setTimeout(() => {
+                        updateUI();
+                        console.log('UI更新完成，当前状态:', {
+                            hasPgnParser: !!window.pgnParser,
+                            branchCount: window.pgnParser?.branches?.length,
+                            startButtonDisabled: $('#startStudy').prop('disabled')
+                        });
+                    }, 500);
+                }
+                
+                // 调试信息（可以在移动端控制台查看）
+                setTimeout(() => {
+                    window.chessAPI.debugStorage();
+                }, 1000);
+                
+                // 在移动端显示连接状态（方便调试）
+                if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+                    setTimeout(() => {
+                        const connectionStatus = window.chessAPI.isBackendAvailable ? '✅ 已连接' : '❌ 未连接';
+                        const apiUrl = window.chessAPI.baseURL;
+                        console.log(`🔗 移动端连接状态: ${connectionStatus}`);
+                        console.log(`📡 API地址: ${apiUrl}`);
+                        
+                        // 在页面显示连接状态
+                        const statusElement = document.getElementById('connectionStatus');
+                        if (statusElement) {
+                            if (window.chessAPI.isBackendAvailable) {
+                                statusElement.innerHTML = '🌐 服务端已连接';
+                                statusElement.style.color = '#4CAF50';
+                            } else {
+                                statusElement.innerHTML = '❌ 服务端未连接 (仅本地模式)';
+                                statusElement.style.color = '#f44336';
+                                showNotification(`后端连接失败: ${apiUrl}`, 'error');
+                            }
+                        }
+                    }, 2000);
+                } else {
+                    // 桌面端也显示连接状态
+                    setTimeout(() => {
+                        const statusElement = document.getElementById('connectionStatus');
+                        if (statusElement) {
+                            if (window.chessAPI.isBackendAvailable) {
+                                statusElement.innerHTML = '🌐 服务端已连接';
+                                statusElement.style.color = '#4CAF50';
+                            } else {
+                                statusElement.innerHTML = '❌ 服务端未连接';
+                                statusElement.style.color = '#f44336';
+                            }
+                        }
+                    }, 2000);
                 }
             });
         });
@@ -28,13 +100,24 @@ $(document).ready(function() {
     $('#pgnInput').change(function(e) {
         const file = e.target.files[0];
         if (file) {
+            console.log('用户选择了文件:', file.name);
+            
             // 显示加载状态
             $('#loadPgn').prop('disabled', true).text('解析中...');
+            
+            // 记录解析开始时间
+            const startTime = Date.now();
             
             // 使用API类上传文件
             window.chessAPI.uploadPGN(file)
                 .then(function(response) {
-                    console.log('PGN parsed successfully:', response);
+                    const duration = Date.now() - startTime;
+                    console.log('PGN解析成功, 耗时:', duration + 'ms');
+                    
+                    // 验证解析结果
+                    if (!response.branches || response.branches.length === 0) {
+                        throw new Error('解析结果中没有找到有效的分支数据');
+                    }
                     
                     // 存储解析结果
                     window.pgnParser = response;
@@ -50,13 +133,30 @@ $(document).ready(function() {
                     showNotification(`成功加载 ${response.branches.length} 个分支！`, 'success');
                 })
                 .catch(function(error) {
-                    console.error('PGN parsing failed:', error);
-                    showNotification('PGN文件解析失败，请检查文件格式！', 'error');
+                    console.error('PGN解析失败:', error);
+                    
+                    // 提供更具体的错误信息
+                    let errorMessage = 'PGN文件解析失败！';
+                    
+                    if (error.message.includes('后端服务不可用')) {
+                        errorMessage = '后端服务未启动，请先运行start_backend.bat';
+                    } else if (error.message.includes('网络')) {
+                        errorMessage = '网络连接问题，请检查网络后重试';
+                    } else {
+                        errorMessage += ' 错误详情: ' + error.message;
+                    }
+                    
+                    showNotification(errorMessage, 'error');
                 })
                 .finally(function() {
                     // 恢复按钮状态
                     $('#loadPgn').prop('disabled', false).text('📁 加载对局');
+                    
+                    // 清空文件输入，允许重新选择同一文件
+                    $('#pgnInput').val('');
                 });
+        } else {
+            console.log('用户取消了文件选择');
         }
     });
 
@@ -92,6 +192,31 @@ $(document).ready(function() {
         $('#completionBanner').hide();
         
         showNotification('已重置背诵状态，棋谱数据保留', 'success');
+    });
+
+    // 清除本地存储
+    $('#clearStorage').click(function() {
+        if (confirm('确定要清除保存的棋谱数据吗？此操作不可恢复。')) {
+            // 清除本地存储
+            window.chessAPI.clearStorage();
+            
+            // 清除当前加载的数据
+            window.pgnParser = null;
+            
+            // 重置棋盘状态
+            window.chessBoard.completedBranches.clear();
+            window.chessBoard.computerUsedBranches.clear();
+            window.chessBoard.stopStudy();
+            window.chessBoard.resetPosition();
+            
+            // 更新UI
+            updateUI();
+            
+            // 隐藏完成横幅
+            $('#completionBanner').hide();
+            
+            showNotification('已清除所有棋谱数据', 'success');
+        }
     });
 
     // 监听颜色选择变化
@@ -145,7 +270,8 @@ $(document).ready(function() {
         }
     }
 
-    function showNotification(message, type = 'success') {
+    // 将showNotification函数暴露给全局，供API类使用
+    window.showNotification = function(message, type = 'success') {
         // 移除现有的通知
         $('.notification').remove();
         

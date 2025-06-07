@@ -420,6 +420,18 @@
             .color-selection {
                 gap: 15px;
             }
+            
+            /* 移动端隐藏加载对局和清除棋谱按钮 */
+            #loadPgn,
+            #clearStorage {
+                display: none !important;
+            }
+            
+            /* 移动端优化按钮组布局 */
+            .button-group {
+                justify-content: center;
+                flex-wrap: wrap;
+            }
         }
         
         /* 加载状态样式 */
@@ -469,6 +481,7 @@
                 <button id="startStudy" disabled>🎯 开始背谱</button>
                 <button id="resetPosition">🔄 回到初始位置</button>
                 <button id="resetAll">🔄 重置进度</button>
+                <button id="clearStorage">🗑️ 清除棋谱</button>
             </div>
             <div class="color-selection">
                 <label>
@@ -486,6 +499,7 @@
                     <div>分支总数: <span id="totalBranches">0</span></div>
                     <div>背完分支数: <span id="completedBranches">0</span></div>
                     <div>完成进度: <span id="progress">0%</span></div>
+                    <div id="connectionStatus" style="font-size: 12px; color: #666; margin-top: 8px;">检测中...</div>
                 </div>
                 <div class="completion-banner" id="completionBanner">
                     🎉 恭喜！您已背完所有分支！
@@ -497,11 +511,12 @@
     
     <div class="toast" id="errorToast">您背错了！</div>
     
-    <input type="file" id="pgnInput" accept=".pgn" style="display: none;">
+    <input type="file" id="pgnInput" style="display: none;">
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
     <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+    
     <script src="js/api.js"></script>
     <script src="js/chess.js"></script>
     <script src="js/app.js"></script>
