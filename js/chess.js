@@ -11,6 +11,8 @@ class ChessBoard {
         this.computerUsedBranches = new Set(); // 电脑已使用过的分支（用于白方第一步）
         this.errorCount = 0; // 错误计数器
         this.errorThreshold = 5; // 错误阈值，5次后提示正确走法
+        this.correctMoves = 0; // 正确步数
+        this.totalMoves = 0; // 总步数（已走步数）
     }
 
     init() {
@@ -64,6 +66,9 @@ class ChessBoard {
             
             console.log('Creating chessboard with config:', config);
             this.board = Chessboard('board', config);
+            
+            // 添加移动端触控支持，防止拖拽时页面滚动
+            this.addTouchSupport();
             
             // 等待一小段时间确保棋盘完全渲染
             setTimeout(() => {
@@ -158,6 +163,11 @@ class ChessBoard {
             // 没有匹配的分支，走错了
             console.log('No matching branch found');
             this.game.undo(); // 撤销移动
+            
+            // 统计错误步数：已走步数+1，正确步数不变
+            this.totalMoves++;
+            this.updateAccuracy();
+            
             this.showError();
             return 'snapback';
         }
@@ -166,6 +176,11 @@ class ChessBoard {
 
         // 走对了，重置错误计数器
         this.errorCount = 0;
+        
+        // 统计正确步数：正确步数+1，已走步数+1
+        this.correctMoves++;
+        this.totalMoves++;
+        this.updateAccuracy();
 
         // 更新当前分支
         this.currentBranch = matchingBranch;
@@ -350,7 +365,7 @@ class ChessBoard {
         return Array.from(possibleMoves);
     }
 
-    resetPosition() {
+    resetPosition(resetAccuracy = false) {
         this.game.reset();
         if (this.board) {
             this.board.position('start');
@@ -361,6 +376,13 @@ class ChessBoard {
         this.errorCount = 0; // 重置错误计数器
         
         if (this.isStudyMode) {
+            // 只有在明确要求时才重置正确率统计
+            if (resetAccuracy) {
+                this.correctMoves = 0;
+                this.totalMoves = 0;
+                this.updateAccuracy();
+            }
+            
             this.updateAvailableBranches();
             
             // 如果用户选择黑方，电脑先走
@@ -457,8 +479,33 @@ class ChessBoard {
         $('#progress').text(`${progress}%`);
         
         if (progress === 100 && total > 0) {
+            // 计算最终正确率
+            const finalAccuracy = this.totalMoves > 0 ? Math.round((this.correctMoves / this.totalMoves) * 100) : 0;
+            
+            // 更新完成横幅显示最终正确率
+            $('#completionBanner').html(`🎉 恭喜！您已背完所有分支！最终正确率：<span style="font-weight: bold;">${finalAccuracy}%</span>`);
             $('#completionBanner').show();
         }
+    }
+
+    updateAccuracy() {
+        // 计算正确率
+        const accuracy = this.totalMoves > 0 ? Math.round((this.correctMoves / this.totalMoves) * 100) : 0;
+        
+        // 更新UI显示
+        $('#accuracy').text(`${accuracy}%`);
+        
+        // 根据正确率设置不同的颜色
+        const accuracyElement = $('#accuracy');
+        if (accuracy >= 90) {
+            accuracyElement.css('color', '#4CAF50'); // 绿色 - 优秀
+        } else if (accuracy >= 70) {
+            accuracyElement.css('color', '#FF9800'); // 橙色 - 良好
+        } else {
+            accuracyElement.css('color', '#f44336'); // 红色 - 需要改进
+        }
+        
+        console.log(`正确率更新: ${this.correctMoves}/${this.totalMoves} = ${accuracy}%`);
     }
 
     isCurrentBranchCompleted() {
@@ -474,18 +521,22 @@ class ChessBoard {
         // 显示分支完成模态框
         this.showBranchCompletedModal();
         
-        // 2秒后自动回到初始位置
+        // 2秒后自动回到初始位置（不重置正确率）
         setTimeout(() => {
-            this.resetPosition();
+            this.resetPosition(false); // 不重置正确率，保持累积
         }, 2000);
     }
 
     showBranchCompletedModal() {
+        // 计算当前正确率
+        const accuracy = this.totalMoves > 0 ? Math.round((this.correctMoves / this.totalMoves) * 100) : 0;
+        
         const modal = $(`
             <div class="modal-overlay">
                 <div class="modal-content">
                     <h3>🎉 分支背诵完成！</h3>
                     <p>恭喜您成功背完了当前分支！</p>
+                    <p>当前累积正确率：<span style="color: #4CAF50; font-weight: bold;">${accuracy}%</span></p>
                     <p>即将自动回到初始位置...</p>
                 </div>
             </div>
@@ -510,7 +561,13 @@ class ChessBoard {
         }
 
         this.isStudyMode = true;
-        this.resetPosition(); // 这会自动更新可用分支
+        
+        // 重置正确率统计
+        this.correctMoves = 0;
+        this.totalMoves = 0;
+        this.updateAccuracy();
+        
+        this.resetPosition(true); // 重置位置并重置正确率
         this.errorCount = 0; // 重置错误计数器
         
         // 再次检查是否有可用分支
@@ -550,6 +607,111 @@ class ChessBoard {
         this.availableBranches = [];
         this.computerUsedBranches.clear(); // 清空电脑已使用的分支记录
         this.errorCount = 0; // 重置错误计数器
+        
+        // 重置正确率统计
+        this.correctMoves = 0;
+        this.totalMoves = 0;
+        this.updateAccuracy();
+        
         return true;
+    }
+
+    addTouchSupport() {
+        const boardElement = document.getElementById('board');
+        if (!boardElement) return;
+
+        let isDragging = false;
+        let touchStartY = 0;
+        let lastTouchTarget = null;
+
+        // 检查元素是否是棋子
+        const isPieceElement = (element) => {
+            if (!element) return false;
+            
+            // 检查多种可能的棋子标识
+            return element.classList.contains('piece-417db') ||
+                   element.closest('.piece-417db') ||
+                   element.classList.toString().includes('piece') ||
+                   (element.style && element.style.backgroundImage && element.style.backgroundImage.includes('.png')) ||
+                   element.getAttribute('data-piece') ||
+                   (element.className && element.className.includes('piece'));
+        };
+
+        // 处理触摸开始事件
+        boardElement.addEventListener('touchstart', (e) => {
+            const target = e.target;
+            lastTouchTarget = target;
+            
+            // 检查是否触摸在棋子上
+            if (isPieceElement(target)) {
+                isDragging = true;
+                touchStartY = e.touches[0].clientY;
+                console.log('开始拖拽棋子，阻止页面滚动');
+                
+                // 立即阻止滚动
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+        // 处理触摸移动事件
+        boardElement.addEventListener('touchmove', (e) => {
+            // 如果正在拖拽棋子，或者触摸目标是棋子，都阻止滚动
+            if (isDragging || isPieceElement(e.target) || isPieceElement(lastTouchTarget)) {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                // 更新拖拽状态
+                if (!isDragging && isPieceElement(e.target)) {
+                    isDragging = true;
+                    touchStartY = e.touches[0].clientY;
+                    console.log('检测到棋子拖拽，阻止页面滚动');
+                }
+            }
+        }, { passive: false });
+
+        // 处理触摸结束事件
+        boardElement.addEventListener('touchend', (e) => {
+            if (isDragging) {
+                isDragging = false;
+                lastTouchTarget = null;
+                console.log('结束拖拽棋子，恢复页面滚动');
+            }
+        }, { passive: true });
+
+        // 处理触摸取消事件
+        boardElement.addEventListener('touchcancel', (e) => {
+            if (isDragging) {
+                isDragging = false;
+                lastTouchTarget = null;
+                console.log('拖拽被取消，恢复页面滚动');
+            }
+        }, { passive: true });
+
+        // 为整个棋盘容器添加额外的保护
+        const boardContainer = boardElement.closest('.board-container');
+        if (boardContainer) {
+            // 使用事件委托处理动态生成的棋子
+            boardContainer.addEventListener('touchstart', (e) => {
+                if (isPieceElement(e.target)) {
+                    e.preventDefault();
+                }
+            }, { passive: false });
+
+            boardContainer.addEventListener('touchmove', (e) => {
+                if (isDragging || isPieceElement(e.target)) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+            }, { passive: false });
+        }
+
+        // 为document添加全局监听，作为最后的防护
+        document.addEventListener('touchmove', (e) => {
+            if (isDragging) {
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+        console.log('移动端触控支持已添加 - 拖拽棋子时将阻止页面滚动');
     }
 } 

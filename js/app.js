@@ -170,7 +170,8 @@ $(document).ready(function() {
 
     // 重置位置
     $('#resetPosition').click(function() {
-        window.chessBoard.resetPosition();
+        // 重置位置但不重置正确率（保持累积）
+        window.chessBoard.resetPosition(false);
     });
 
     // 完全重置
@@ -178,12 +179,17 @@ $(document).ready(function() {
         // 停止背谱模式
         window.chessBoard.stopStudy();
         
-        // 重置游戏状态
-        window.chessBoard.resetPosition();
-        
         // 清理背诵状态，但保留PGN数据
         window.chessBoard.completedBranches.clear();
         window.chessBoard.computerUsedBranches.clear();
+        
+        // 重置正确率统计
+        window.chessBoard.correctMoves = 0;
+        window.chessBoard.totalMoves = 0;
+        window.chessBoard.updateAccuracy();
+        
+        // 重置游戏状态（并重置正确率）
+        window.chessBoard.resetPosition(true);
         
         // 更新UI（不清空PGN数据）
         updateUI();
@@ -207,7 +213,13 @@ $(document).ready(function() {
             window.chessBoard.completedBranches.clear();
             window.chessBoard.computerUsedBranches.clear();
             window.chessBoard.stopStudy();
-            window.chessBoard.resetPosition();
+            
+            // 重置正确率统计
+            window.chessBoard.correctMoves = 0;
+            window.chessBoard.totalMoves = 0;
+            window.chessBoard.updateAccuracy();
+            
+            window.chessBoard.resetPosition(true);
             
             // 更新UI
             updateUI();
@@ -245,6 +257,7 @@ $(document).ready(function() {
             $('#totalBranches').text('0');
             $('#completedBranches').text('0');
             $('#progress').text('0%');
+            $('#accuracy').text('0%').css('color', '#2196F3');
         }
         
         // 更新按钮状态

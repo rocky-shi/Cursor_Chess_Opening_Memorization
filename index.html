@@ -384,6 +384,45 @@
             box-shadow: 0 6px 16px rgba(33, 150, 243, 0.4);
         }
         
+        /* 移动端触控优化 */
+        @media (max-width: 768px) {
+            /* 防止在棋盘区域的意外滚动 */
+            .board-container {
+                touch-action: none;
+                -webkit-overflow-scrolling: auto;
+                overflow: hidden;
+            }
+            
+            /* 优化棋盘拖拽体验 */
+            #board {
+                touch-action: none;
+                -webkit-user-select: none;
+                -moz-user-select: none;
+                -ms-user-select: none;
+                user-select: none;
+            }
+            
+            /* 棋子拖拽时的样式优化 */
+            .chessboard-63f37 .piece-417db {
+                touch-action: none !important;
+                -webkit-user-drag: none;
+                -webkit-user-select: none;
+                -moz-user-select: none;
+                -ms-user-select: none;
+                user-select: none;
+            }
+            
+            /* 防止长按选择文本或弹出上下文菜单 */
+            .chessboard-63f37 {
+                -webkit-touch-callout: none;
+                -webkit-user-select: none;
+                -khtml-user-select: none;
+                -moz-user-select: none;
+                -ms-user-select: none;
+                user-select: none;
+            }
+        }
+
         /* 响应式设计 */
         @media (max-width: 1200px) {
             .container {
@@ -499,6 +538,7 @@
                     <div>分支总数: <span id="totalBranches">0</span></div>
                     <div>背完分支数: <span id="completedBranches">0</span></div>
                     <div>完成进度: <span id="progress">0%</span></div>
+                    <div>背谱正确率: <span id="accuracy">0%</span></div>
                     <div id="connectionStatus" style="font-size: 12px; color: #666; margin-top: 8px;">检测中...</div>
                 </div>
                 <div class="completion-banner" id="completionBanner">
