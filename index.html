@@ -65,6 +65,51 @@
             border-radius: 8px !important;
         }
         
+        /* 点击移动高亮样式 */
+        .highlight-selected {
+            background-color: rgba(255, 255, 0, 0.8) !important;
+            box-shadow: inset 0 0 3px rgba(255, 255, 0, 1) !important;
+        }
+        
+        .highlight-possible {
+            background-color: rgba(0, 255, 0, 0.3) !important;
+            box-shadow: inset 0 0 2px rgba(0, 255, 0, 0.6) !important;
+        }
+        
+        .highlight-capture {
+            background-color: rgba(255, 0, 0, 0.4) !important;
+            box-shadow: inset 0 0 3px rgba(255, 0, 0, 0.8) !important;
+        }
+        
+        /* 覆盖层高亮样式 */
+        .square-overlay.highlight-selected {
+            background-color: rgba(255, 255, 0, 0.7);
+            border: 3px solid rgba(255, 255, 0, 1);
+            box-sizing: border-box;
+        }
+        
+        .square-overlay.highlight-possible {
+            background-color: rgba(0, 255, 0, 0.3);
+            border: 2px solid rgba(0, 255, 0, 0.8);
+            box-sizing: border-box;
+        }
+        
+        .square-overlay.highlight-capture {
+            background-color: rgba(255, 0, 0, 0.4);
+            border: 3px solid rgba(255, 0, 0, 0.9);
+            box-sizing: border-box;
+        }
+        
+        /* 为方格添加点击cursor样式 */
+        .chessboard-63f37 .square-55d63 {
+            cursor: pointer !important;
+        }
+        
+        /* 为整个棋盘添加点击指针 */
+        .chessboard-63f37 {
+            cursor: pointer !important;
+        }
+        
         /* 回合指示器 */
         .turn-indicator {
             position: absolute;
