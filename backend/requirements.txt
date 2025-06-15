@@ -1,4 +1,26 @@
+# 国际象棋开局记忆系统 - Python依赖包
+# Chess Opening Memorization System - Python Dependencies
+
+# Web框架 (Web Framework)
 Flask==2.3.3
 Flask-CORS==4.0.0
+Werkzeug==2.3.7
+
+# 国际象棋库 (Chess Library)
 python-chess==1.999
-Werkzeug==2.3.7 
+
+# 以下是Python标准库，无需安装 (Python Standard Library, no installation required)
+# io - 输入输出流处理
+# re - 正则表达式
+# os - 操作系统接口
+# sqlite3 - SQLite数据库接口  
+# json - JSON数据处理
+# datetime - 日期时间处理
+# threading - 多线程支持
+# hashlib - 哈希算法库
+# secrets - 安全随机数生成
+# functools - 函数工具
+# typing - 类型提示
+
+# 可选依赖 (Optional Dependencies)
+# requests==2.31.0  # 用于测试脚本 (for test scripts) 
