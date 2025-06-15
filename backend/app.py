@@ -122,8 +122,23 @@ def init_database():
                 total_branches INTEGER,
                 total_games INTEGER,
                 uploaded_by INTEGER,
-                is_public BOOLEAN DEFAULT 1,
+                is_public BOOLEAN DEFAULT 0,
                 FOREIGN KEY (uploaded_by) REFERENCES users (id)
+            )
+        ''')
+        
+        # 创建PGN权限表
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS pgn_permissions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                pgn_id INTEGER NOT NULL,
+                user_id INTEGER NOT NULL,
+                granted_by INTEGER NOT NULL,
+                granted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (pgn_id) REFERENCES pgn_games (id) ON DELETE CASCADE,
+                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
+                FOREIGN KEY (granted_by) REFERENCES users (id),
+                UNIQUE(pgn_id, user_id)
             )
         ''')
         
@@ -200,6 +215,29 @@ def get_current_user():
                 'login_count': user[7]
             }
     return None
+
+def check_pgn_permission(user_id: int, pgn_id: int) -> bool:
+    """检查用户是否有访问特定PGN的权限"""
+    with db_lock:
+        conn = sqlite3.connect(DATABASE_PATH)
+        cursor = conn.cursor()
+        
+        # 检查用户是否是管理员
+        cursor.execute('SELECT role FROM users WHERE id = ?', (user_id,))
+        user = cursor.fetchone()
+        if user and user[0] == 'admin':
+            conn.close()
+            return True
+        
+        # 检查是否有专门的权限授权
+        cursor.execute('''
+            SELECT 1 FROM pgn_permissions 
+            WHERE pgn_id = ? AND user_id = ?
+        ''', (pgn_id, user_id))
+        permission = cursor.fetchone()
+        
+        conn.close()
+        return permission is not None
 
 # 用户认证相关API
 @app.route('/api/auth/login', methods=['POST'])
@@ -780,6 +818,10 @@ def get_current_stats(pgn_id):
     try:
         user_id = session['user_id']
         
+        # 检查用户是否有访问此PGN的权限
+        if not check_pgn_permission(user_id, pgn_id):
+            return jsonify({'error': '您没有权限访问此PGN文件'}), 403
+        
         with db_lock:
             conn = sqlite3.connect(DATABASE_PATH)
             cursor = conn.cursor()
@@ -823,28 +865,58 @@ def get_progress_by_pgn():
             conn = sqlite3.connect(DATABASE_PATH)
             cursor = conn.cursor()
             
-            # 获取用户所有已练习的PGN的统计信息
-            cursor.execute('''
-                SELECT 
-                    pg.id,
-                    pg.filename,
-                    pg.total_branches,
-                    COUNT(up.id) as practiced_branches,
-                    SUM(CASE WHEN up.is_completed = 1 THEN 1 ELSE 0 END) as completed_branches,
-                    SUM(up.correct_count) as total_correct,
-                    SUM(up.total_attempts) as total_attempts,
-                    AVG(up.mastery_level) as avg_mastery,
-                    MAX(up.last_attempt_at) as last_practice_time,
-                    pg.upload_time
-                FROM pgn_games pg
-                LEFT JOIN user_progress up ON pg.id = up.pgn_game_id AND up.user_id = ?
-                WHERE EXISTS (
-                    SELECT 1 FROM user_progress 
-                    WHERE pgn_game_id = pg.id AND user_id = ?
-                )
-                GROUP BY pg.id, pg.filename, pg.total_branches, pg.upload_time
-                ORDER BY last_practice_time DESC
-            ''', (user_id, user_id))
+            # 检查用户是否是管理员
+            cursor.execute('SELECT role FROM users WHERE id = ?', (user_id,))
+            user = cursor.fetchone()
+            is_admin = user and user[0] == 'admin'
+            
+            if is_admin:
+                # 管理员可以看到所有已练习的PGN
+                cursor.execute('''
+                    SELECT 
+                        pg.id,
+                        pg.filename,
+                        pg.total_branches,
+                        COUNT(up.id) as practiced_branches,
+                        SUM(CASE WHEN up.is_completed = 1 THEN 1 ELSE 0 END) as completed_branches,
+                        SUM(up.correct_count) as total_correct,
+                        SUM(up.total_attempts) as total_attempts,
+                        AVG(up.mastery_level) as avg_mastery,
+                        MAX(up.last_attempt_at) as last_practice_time,
+                        pg.upload_time
+                    FROM pgn_games pg
+                    LEFT JOIN user_progress up ON pg.id = up.pgn_game_id AND up.user_id = ?
+                    WHERE EXISTS (
+                        SELECT 1 FROM user_progress 
+                        WHERE pgn_game_id = pg.id AND user_id = ?
+                    )
+                    GROUP BY pg.id, pg.filename, pg.total_branches, pg.upload_time
+                    ORDER BY last_practice_time DESC
+                ''', (user_id, user_id))
+            else:
+                # 普通用户只能看到有权限且已练习的PGN
+                cursor.execute('''
+                    SELECT 
+                        pg.id,
+                        pg.filename,
+                        pg.total_branches,
+                        COUNT(up.id) as practiced_branches,
+                        SUM(CASE WHEN up.is_completed = 1 THEN 1 ELSE 0 END) as completed_branches,
+                        SUM(up.correct_count) as total_correct,
+                        SUM(up.total_attempts) as total_attempts,
+                        AVG(up.mastery_level) as avg_mastery,
+                        MAX(up.last_attempt_at) as last_practice_time,
+                        pg.upload_time
+                    FROM pgn_games pg
+                    LEFT JOIN user_progress up ON pg.id = up.pgn_game_id AND up.user_id = ?
+                    JOIN pgn_permissions p ON pg.id = p.pgn_id AND p.user_id = ?
+                    WHERE EXISTS (
+                        SELECT 1 FROM user_progress 
+                        WHERE pgn_game_id = pg.id AND user_id = ?
+                    )
+                    GROUP BY pg.id, pg.filename, pg.total_branches, pg.upload_time
+                    ORDER BY last_practice_time DESC
+                ''', (user_id, user_id, user_id))
             
             pgn_stats = cursor.fetchall()
             conn.close()
@@ -932,6 +1004,10 @@ def get_branches_progress(pgn_id):
     """获取指定PGN的所有分支详细进度"""
     try:
         user_id = session['user_id']
+        
+        # 检查用户是否有访问此PGN的权限
+        if not check_pgn_permission(user_id, pgn_id):
+            return jsonify({'error': '您没有权限访问此PGN文件'}), 404
         
         with db_lock:
             conn = sqlite3.connect(DATABASE_PATH)
@@ -1239,6 +1315,147 @@ def get_admin_pgn_list():
         
     except Exception as e:
         return jsonify({'error': f'获取PGN列表失败: {str(e)}'}), 500
+
+@app.route('/api/admin/pgn/<int:pgn_id>/permissions', methods=['GET'])
+@require_admin
+def get_pgn_permissions(pgn_id):
+    """获取PGN文件的权限设置"""
+    try:
+        with db_lock:
+            conn = sqlite3.connect(DATABASE_PATH)
+            cursor = conn.cursor()
+            
+            # 获取PGN基本信息
+            cursor.execute('SELECT filename FROM pgn_games WHERE id = ?', (pgn_id,))
+            pgn_info = cursor.fetchone()
+            
+            if not pgn_info:
+                return jsonify({'error': 'PGN文件不存在'}), 404
+            
+            # 获取已授权的用户列表
+            cursor.execute('''
+                SELECT u.id, u.username, u.email, p.granted_at
+                FROM pgn_permissions p
+                JOIN users u ON p.user_id = u.id
+                WHERE p.pgn_id = ?
+                ORDER BY p.granted_at DESC
+            ''', (pgn_id,))
+            
+            authorized_users = []
+            for row in cursor.fetchall():
+                authorized_users.append({
+                    'user_id': row[0],
+                    'username': row[1],
+                    'email': row[2],
+                    'granted_at': row[3]
+                })
+            
+            # 获取所有用户列表（除了管理员）
+            cursor.execute('''
+                SELECT id, username, email 
+                FROM users 
+                WHERE role != 'admin' AND is_active = 1
+                ORDER BY username
+            ''')
+            
+            all_users = []
+            authorized_user_ids = {user['user_id'] for user in authorized_users}
+            
+            for row in cursor.fetchall():
+                user_id, username, email = row
+                all_users.append({
+                    'user_id': user_id,
+                    'username': username,
+                    'email': email,
+                    'has_access': user_id in authorized_user_ids
+                })
+            
+            conn.close()
+        
+        return jsonify({
+            'success': True,
+            'pgn_id': pgn_id,
+            'filename': pgn_info[0],
+            'authorized_users': authorized_users,
+            'all_users': all_users
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'获取权限信息失败: {str(e)}'}), 500
+
+@app.route('/api/admin/pgn/<int:pgn_id>/permissions', methods=['POST'])
+@require_admin
+def grant_pgn_permission(pgn_id):
+    """为用户授权PGN访问权限"""
+    try:
+        data = request.get_json()
+        user_id = data.get('user_id')
+        
+        if not user_id:
+            return jsonify({'error': '用户ID不能为空'}), 400
+        
+        admin_id = session['user_id']
+        
+        with db_lock:
+            conn = sqlite3.connect(DATABASE_PATH)
+            cursor = conn.cursor()
+            
+            # 检查PGN是否存在
+            cursor.execute('SELECT id FROM pgn_games WHERE id = ?', (pgn_id,))
+            if not cursor.fetchone():
+                return jsonify({'error': 'PGN文件不存在'}), 404
+            
+            # 检查用户是否存在
+            cursor.execute('SELECT id FROM users WHERE id = ? AND is_active = 1', (user_id,))
+            if not cursor.fetchone():
+                return jsonify({'error': '用户不存在或已禁用'}), 404
+            
+            # 插入权限记录（如果不存在）
+            cursor.execute('''
+                INSERT OR IGNORE INTO pgn_permissions (pgn_id, user_id, granted_by)
+                VALUES (?, ?, ?)
+            ''', (pgn_id, user_id, admin_id))
+            
+            if cursor.rowcount > 0:
+                conn.commit()
+                result = {'success': True, 'message': '权限授予成功'}
+            else:
+                result = {'success': True, 'message': '用户已拥有访问权限'}
+            
+            conn.close()
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'error': f'授权失败: {str(e)}'}), 500
+
+@app.route('/api/admin/pgn/<int:pgn_id>/permissions/<int:user_id>', methods=['DELETE'])
+@require_admin
+def revoke_pgn_permission(pgn_id, user_id):
+    """撤销用户的PGN访问权限"""
+    try:
+        with db_lock:
+            conn = sqlite3.connect(DATABASE_PATH)
+            cursor = conn.cursor()
+            
+            # 删除权限记录
+            cursor.execute('''
+                DELETE FROM pgn_permissions 
+                WHERE pgn_id = ? AND user_id = ?
+            ''', (pgn_id, user_id))
+            
+            if cursor.rowcount > 0:
+                conn.commit()
+                result = {'success': True, 'message': '权限撤销成功'}
+            else:
+                result = {'success': False, 'message': '权限记录不存在'}
+            
+            conn.close()
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'error': f'撤销权限失败: {str(e)}'}), 500
 
 def save_pgn_to_db(filename: str, original_content: str, parsed_data: dict, file_size: int):
     """保存PGN数据到数据库"""
@@ -1788,15 +2005,56 @@ def _generate_node_html(node: Dict[str, Any], level: int) -> str:
 @app.route('/api/latest-pgn', methods=['GET'])
 @require_login
 def get_latest_pgn_api():
-    """获取最新上传的PGN数据"""
+    """获取最新上传的PGN数据（需要权限检查）"""
     try:
-        latest_pgn = get_latest_pgn()
+        user_id = session['user_id']
         
-        if latest_pgn is None:
+        with db_lock:
+            conn = sqlite3.connect(DATABASE_PATH)
+            cursor = conn.cursor()
+            
+            # 检查用户是否是管理员
+            cursor.execute('SELECT role FROM users WHERE id = ?', (user_id,))
+            user = cursor.fetchone()
+            is_admin = user and user[0] == 'admin'
+            
+            if is_admin:
+                # 管理员可以看到最新的PGN
+                cursor.execute('''
+                    SELECT id, filename, parsed_data, upload_time, file_size, total_branches, total_games
+                    FROM pgn_games 
+                    ORDER BY upload_time DESC 
+                    LIMIT 1
+                ''')
+            else:
+                # 普通用户只能看到有权限访问的最新PGN
+                cursor.execute('''
+                    SELECT g.id, g.filename, g.parsed_data, g.upload_time, g.file_size, g.total_branches, g.total_games
+                    FROM pgn_games g
+                    JOIN pgn_permissions p ON g.id = p.pgn_id
+                    WHERE p.user_id = ?
+                    ORDER BY g.upload_time DESC 
+                    LIMIT 1
+                ''', (user_id,))
+            
+            row = cursor.fetchone()
+            conn.close()
+        
+        if row is None:
             return jsonify({
                 'success': False,
-                'message': '没有找到任何PGN数据'
+                'message': '没有找到可访问的PGN数据'
             }), 404
+        
+        latest_pgn = {
+            'id': row[0],
+            'filename': row[1],
+            'parsed_data': json.loads(row[2]),
+            'upload_time': row[3],
+            'file_size': row[4],
+            'total_branches': row[5],
+            'total_games': row[6]
+        }
         
         # 返回解析后的数据，格式与parse-pgn API一致
         response_data = latest_pgn['parsed_data'].copy()
@@ -1822,10 +2080,54 @@ def get_latest_pgn_api():
 @app.route('/api/pgn-list', methods=['GET'])
 @require_login
 def get_pgn_list_api():
-    """获取PGN历史列表"""
+    """获取PGN历史列表（只显示用户有权限访问的）"""
     try:
         limit = request.args.get('limit', 10, type=int)
-        pgn_list = get_pgn_list(limit)
+        user_id = session['user_id']
+        
+        with db_lock:
+            conn = sqlite3.connect(DATABASE_PATH)
+            cursor = conn.cursor()
+            
+            # 检查用户是否是管理员
+            cursor.execute('SELECT role FROM users WHERE id = ?', (user_id,))
+            user = cursor.fetchone()
+            is_admin = user and user[0] == 'admin'
+            
+            if is_admin:
+                # 管理员可以看到所有PGN
+                cursor.execute('''
+                    SELECT id, filename, upload_time, file_size, total_branches, total_games, uploaded_by
+                    FROM pgn_games 
+                    ORDER BY upload_time DESC 
+                    LIMIT ?
+                ''', (limit,))
+            else:
+                # 普通用户只能看到有权限访问的PGN
+                cursor.execute('''
+                    SELECT DISTINCT g.id, g.filename, g.upload_time, g.file_size, 
+                           g.total_branches, g.total_games, g.uploaded_by
+                    FROM pgn_games g
+                    JOIN pgn_permissions p ON g.id = p.pgn_id
+                    WHERE p.user_id = ?
+                    ORDER BY g.upload_time DESC 
+                    LIMIT ?
+                ''', (user_id, limit))
+            
+            rows = cursor.fetchall()
+            conn.close()
+        
+        pgn_list = []
+        for row in rows:
+            pgn_list.append({
+                'id': row[0],
+                'filename': row[1],
+                'upload_time': row[2],
+                'file_size': row[3],
+                'total_branches': row[4],
+                'total_games': row[5],
+                'uploaded_by': row[6]
+            })
         
         return jsonify({
             'success': True,
@@ -1842,8 +2144,17 @@ def get_pgn_list_api():
 @app.route('/api/pgn/<int:pgn_id>', methods=['GET'])
 @require_login
 def get_pgn_by_id(pgn_id):
-    """根据ID获取PGN数据"""
+    """根据ID获取PGN数据（需要权限检查）"""
     try:
+        user_id = session['user_id']
+        
+        # 检查用户是否有访问此PGN的权限
+        if not check_pgn_permission(user_id, pgn_id):
+            return jsonify({
+                'success': False,
+                'error': '您没有权限访问此PGN文件'
+            }), 403
+        
         with db_lock:
             conn = sqlite3.connect(DATABASE_PATH)
             cursor = conn.cursor()

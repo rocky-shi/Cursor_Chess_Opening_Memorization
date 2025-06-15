@@ -537,6 +537,43 @@
         </div>
     </div>
 
+    <!-- PGN权限管理模态框 -->
+    <div id="pgnPermissionsModal" class="modal">
+        <div class="modal-content" style="max-width: 80%; width: 900px;">
+            <div class="modal-header">
+                <h3 id="pgnPermissionsModalTitle">PGN权限管理</h3>
+                <span class="close" onclick="closePGNPermissionsModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="pgnPermissionsAlertContainer"></div>
+                
+                <!-- 已授权用户列表 -->
+                <div class="card" style="margin-bottom: 1.5rem;">
+                    <div class="card-header">
+                        <h4 style="font-size: 1.1rem; margin: 0;">已授权用户</h4>
+                    </div>
+                    <div class="card-body">
+                        <div id="authorizedUsersContainer">
+                            <div class="loading">正在加载已授权用户...</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 添加用户权限 -->
+                <div class="card">
+                    <div class="card-header">
+                        <h4 style="font-size: 1.1rem; margin: 0;">添加用户权限</h4>
+                    </div>
+                    <div class="card-body">
+                        <div id="availableUsersContainer">
+                            <div class="loading">正在加载可用用户...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- 创建/编辑用户模态框 -->
     <div id="userModal" class="modal">
         <div class="modal-content">
@@ -976,6 +1013,7 @@
                                     <span class="badge badge-admin">${pgn.total_attempts}</span>
                                 </td>
                                 <td>
+                                    <button class="btn btn-primary" onclick="managePGNPermissions(${pgn.id}, '${pgn.filename.replace(/'/g, '\\\'')}')" style="font-size: 0.8rem; margin-right: 5px;">权限管理</button>
                                     <button class="btn btn-info" onclick="viewPGNUsers(${pgn.id}, '${pgn.filename.replace(/'/g, '\\\'')}')" style="font-size: 0.8rem; margin-right: 5px;">查看用户</button>
                                     <button class="btn btn-danger" onclick="deletePGN(${pgn.id}, '${pgn.filename.replace(/'/g, '\\\'')}')" style="font-size: 0.8rem;">删除</button>
                                 </td>
@@ -1317,11 +1355,223 @@
             }, 5000);
         }
 
+        // ================ PGN权限管理相关函数 ================
+
+        let currentPGNId = null;
+        let currentPGNFilename = '';
+        let permissionData = null;
+
+        // 管理PGN权限
+        async function managePGNPermissions(pgnId, filename) {
+            currentPGNId = pgnId;
+            currentPGNFilename = filename;
+            
+            document.getElementById('pgnPermissionsModalTitle').textContent = `${filename} - 权限管理`;
+            document.getElementById('pgnPermissionsModal').style.display = 'block';
+            document.getElementById('pgnPermissionsAlertContainer').innerHTML = '';
+            
+            // 重置容器
+            document.getElementById('authorizedUsersContainer').innerHTML = '<div class="loading">正在加载已授权用户...</div>';
+            document.getElementById('availableUsersContainer').innerHTML = '<div class="loading">正在加载可用用户...</div>';
+            
+            await loadPGNPermissions(pgnId);
+        }
+
+        // 关闭PGN权限管理模态框
+        function closePGNPermissionsModal() {
+            document.getElementById('pgnPermissionsModal').style.display = 'none';
+            currentPGNId = null;
+            currentPGNFilename = '';
+            permissionData = null;
+        }
+
+        // 加载PGN权限数据
+        async function loadPGNPermissions(pgnId) {
+            try {
+                const response = await fetch(`${API_BASE}/admin/pgn/${pgnId}/permissions`, {
+                    credentials: 'include'
+                });
+
+                if (!response.ok) {
+                    throw new Error('获取权限信息失败');
+                }
+
+                const result = await response.json();
+                if (!result.success) {
+                    throw new Error(result.error || '获取权限信息失败');
+                }
+
+                permissionData = result;
+                renderAuthorizedUsers(result.authorized_users);
+                renderAvailableUsers(result.all_users);
+            } catch (error) {
+                console.error('加载PGN权限失败:', error);
+                showPGNPermissionsAlert('加载权限信息失败: ' + error.message, 'danger');
+            }
+        }
+
+        // 渲染已授权用户列表
+        function renderAuthorizedUsers(authorizedUsers) {
+            const container = document.getElementById('authorizedUsersContainer');
+            
+            if (authorizedUsers.length === 0) {
+                container.innerHTML = '<div class="empty-state">暂无已授权用户</div>';
+                return;
+            }
+
+            const usersHTML = `
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>用户ID</th>
+                            <th>用户名</th>
+                            <th>邮箱</th>
+                            <th>授权时间</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${authorizedUsers.map(user => `
+                            <tr>
+                                <td>${user.user_id}</td>
+                                <td><strong>${user.username}</strong></td>
+                                <td>${user.email || '-'}</td>
+                                <td>${formatDateTime(user.granted_at)}</td>
+                                <td>
+                                    <button class="btn btn-danger" onclick="revokeUserPermission(${user.user_id}, '${user.username}')" style="font-size: 0.8rem;">
+                                        撤销权限
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+
+            container.innerHTML = usersHTML;
+        }
+
+        // 渲染可用用户列表
+        function renderAvailableUsers(allUsers) {
+            const container = document.getElementById('availableUsersContainer');
+            
+            const usersWithoutAccess = allUsers.filter(user => !user.has_access);
+            
+            if (usersWithoutAccess.length === 0) {
+                container.innerHTML = '<div class="empty-state">所有用户都已拥有访问权限</div>';
+                return;
+            }
+
+            const usersHTML = `
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>用户ID</th>
+                            <th>用户名</th>
+                            <th>邮箱</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${usersWithoutAccess.map(user => `
+                            <tr>
+                                <td>${user.user_id}</td>
+                                <td><strong>${user.username}</strong></td>
+                                <td>${user.email || '-'}</td>
+                                <td>
+                                    <button class="btn btn-success" onclick="grantUserPermission(${user.user_id}, '${user.username}')" style="font-size: 0.8rem;">
+                                        授予权限
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+
+            container.innerHTML = usersHTML;
+        }
+
+        // 授予用户权限
+        async function grantUserPermission(userId, username) {
+            if (!confirm(`确定要授予用户 "${username}" 访问PGN "${currentPGNFilename}" 的权限吗？`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/pgn/${currentPGNId}/permissions`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        user_id: userId
+                    }),
+                    credentials: 'include'
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    showPGNPermissionsAlert(result.message || '权限授予成功', 'success');
+                    // 重新加载权限数据
+                    await loadPGNPermissions(currentPGNId);
+                } else {
+                    showPGNPermissionsAlert(result.error || '授权失败', 'danger');
+                }
+            } catch (error) {
+                showPGNPermissionsAlert('网络错误: ' + error.message, 'danger');
+                console.error('授权失败:', error);
+            }
+        }
+
+        // 撤销用户权限
+        async function revokeUserPermission(userId, username) {
+            if (!confirm(`⚠️ 确定要撤销用户 "${username}" 访问PGN "${currentPGNFilename}" 的权限吗？\n\n撤销后，该用户将无法再访问此PGN文件。`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/pgn/${currentPGNId}/permissions/${userId}`, {
+                    method: 'DELETE',
+                    credentials: 'include'
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    showPGNPermissionsAlert(result.message || '权限撤销成功', 'success');
+                    // 重新加载权限数据
+                    await loadPGNPermissions(currentPGNId);
+                } else {
+                    showPGNPermissionsAlert(result.error || '撤销失败', 'danger');
+                }
+            } catch (error) {
+                showPGNPermissionsAlert('网络错误: ' + error.message, 'danger');
+                console.error('撤销权限失败:', error);
+            }
+        }
+
+        // 显示PGN权限相关提示信息
+        function showPGNPermissionsAlert(message, type = 'danger') {
+            document.getElementById('pgnPermissionsAlertContainer').innerHTML = `
+                <div class="alert alert-${type}">
+                    ${message}
+                </div>
+            `;
+            
+            // 5秒后自动清除
+            setTimeout(() => {
+                document.getElementById('pgnPermissionsAlertContainer').innerHTML = '';
+            }, 5000);
+        }
+
         // 点击模态框外部关闭
         window.addEventListener('click', function(event) {
             const userModal = document.getElementById('userModal');
             const pgnModal = document.getElementById('pgnUploadModal');
             const pgnUsersModal = document.getElementById('pgnUsersModal');
+            const pgnPermissionsModal = document.getElementById('pgnPermissionsModal');
             
             if (event.target === userModal) {
                 closeUserModal();
@@ -1331,6 +1581,9 @@
             }
             if (event.target === pgnUsersModal) {
                 closePGNUsersModal();
+            }
+            if (event.target === pgnPermissionsModal) {
+                closePGNPermissionsModal();
             }
         });
     </script>
