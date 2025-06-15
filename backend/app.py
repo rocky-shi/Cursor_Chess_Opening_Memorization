@@ -706,8 +706,8 @@ def get_progress_stats():
                 SELECT 
                     COUNT(*) as total_branches,
                     SUM(CASE WHEN is_completed = 1 THEN 1 ELSE 0 END) as completed_branches,
-                    SUM(correct_count) as total_correct,
-                    SUM(total_attempts) as total_attempts,
+                    SUM(COALESCE(correct_count, 0)) as total_correct,
+                    SUM(COALESCE(total_attempts, 0)) as total_attempts,
                     AVG(mastery_level) as avg_mastery
                 FROM user_progress 
                 WHERE user_id = ?
@@ -829,8 +829,8 @@ def get_current_stats(pgn_id):
             # 获取数据库中的统计数据
             cursor.execute('''
                 SELECT 
-                    SUM(correct_count) as total_correct,
-                    SUM(total_attempts) as total_attempts
+                    SUM(COALESCE(correct_count, 0)) as total_correct,
+                    SUM(COALESCE(total_attempts, 0)) as total_attempts
                 FROM user_progress 
                 WHERE user_id = ? AND pgn_game_id = ?
             ''', (user_id, pgn_id))
@@ -879,20 +879,16 @@ def get_progress_by_pgn():
                         pg.total_branches,
                         COUNT(up.id) as practiced_branches,
                         SUM(CASE WHEN up.is_completed = 1 THEN 1 ELSE 0 END) as completed_branches,
-                        SUM(up.correct_count) as total_correct,
-                        SUM(up.total_attempts) as total_attempts,
+                        SUM(COALESCE(up.correct_count, 0)) as total_correct,
+                        SUM(COALESCE(up.total_attempts, 0)) as total_attempts,
                         AVG(up.mastery_level) as avg_mastery,
                         MAX(up.last_attempt_at) as last_practice_time,
                         pg.upload_time
                     FROM pgn_games pg
-                    LEFT JOIN user_progress up ON pg.id = up.pgn_game_id AND up.user_id = ?
-                    WHERE EXISTS (
-                        SELECT 1 FROM user_progress 
-                        WHERE pgn_game_id = pg.id AND user_id = ?
-                    )
+                    INNER JOIN user_progress up ON pg.id = up.pgn_game_id AND up.user_id = ?
                     GROUP BY pg.id, pg.filename, pg.total_branches, pg.upload_time
                     ORDER BY last_practice_time DESC
-                ''', (user_id, user_id))
+                ''', (user_id,))
             else:
                 # 普通用户只能看到有权限且已练习的PGN
                 cursor.execute('''
@@ -902,21 +898,17 @@ def get_progress_by_pgn():
                         pg.total_branches,
                         COUNT(up.id) as practiced_branches,
                         SUM(CASE WHEN up.is_completed = 1 THEN 1 ELSE 0 END) as completed_branches,
-                        SUM(up.correct_count) as total_correct,
-                        SUM(up.total_attempts) as total_attempts,
+                        SUM(COALESCE(up.correct_count, 0)) as total_correct,
+                        SUM(COALESCE(up.total_attempts, 0)) as total_attempts,
                         AVG(up.mastery_level) as avg_mastery,
                         MAX(up.last_attempt_at) as last_practice_time,
                         pg.upload_time
                     FROM pgn_games pg
-                    LEFT JOIN user_progress up ON pg.id = up.pgn_game_id AND up.user_id = ?
-                    JOIN pgn_permissions p ON pg.id = p.pgn_id AND p.user_id = ?
-                    WHERE EXISTS (
-                        SELECT 1 FROM user_progress 
-                        WHERE pgn_game_id = pg.id AND user_id = ?
-                    )
+                    INNER JOIN user_progress up ON pg.id = up.pgn_game_id AND up.user_id = ?
+                    INNER JOIN pgn_permissions p ON pg.id = p.pgn_id AND p.user_id = ?
                     GROUP BY pg.id, pg.filename, pg.total_branches, pg.upload_time
                     ORDER BY last_practice_time DESC
-                ''', (user_id, user_id, user_id))
+                ''', (user_id, user_id))
             
             pgn_stats = cursor.fetchall()
             conn.close()
@@ -924,13 +916,6 @@ def get_progress_by_pgn():
         result = []
         for row in pgn_stats:
             pgn_id, filename, total_branches, practiced_branches, completed_branches, total_correct, total_attempts, avg_mastery, last_practice_time, upload_time = row
-            
-            # 计算统计数据
-            completion_rate = (completed_branches / total_branches * 100) if total_branches > 0 else 0
-            
-            # 计算整体正确率：包含历史已背完分支和当前背诵分支的合并统计
-            # 这里的total_correct和total_attempts已经包含了所有分支的累计数据
-            accuracy_rate = (total_correct / total_attempts * 100) if total_attempts > 0 else 0
             
             # 重新计算掌握度：需要查询每个分支的详细情况
             with db_lock:
@@ -945,15 +930,29 @@ def get_progress_by_pgn():
                         total_attempts
                     FROM user_progress 
                     WHERE user_id = ? AND pgn_game_id = ?
-                ''', (session['user_id'], pgn_id))
+                ''', (user_id, pgn_id))
                 
                 branch_details = cursor.fetchall()
                 conn.close()
             
+            # 重新计算总正确数和总尝试数（确保数据准确）
+            recalculated_total_correct = sum(row[1] or 0 for row in branch_details)
+            recalculated_total_attempts = sum(row[2] or 0 for row in branch_details)
+            
+            # 使用重新计算的值
+            total_correct = recalculated_total_correct
+            total_attempts = recalculated_total_attempts
+            
+            # 计算统计数据
+            completion_rate = (completed_branches / total_branches * 100) if total_branches > 0 else 0
+            
+            # 计算整体正确率：使用重新计算的准确数据
+            accuracy_rate = (total_correct / total_attempts * 100) if total_attempts > 0 else 0
+            
             # 计算真正掌握的分支数（完成且100%正确）
             mastered_branches = 0
-            for is_completed, correct_count, total_attempts in branch_details:
-                if is_completed and total_attempts > 0 and (correct_count / total_attempts) == 1.0:
+            for is_completed, correct_count, total_attempts_branch in branch_details:
+                if is_completed and total_attempts_branch > 0 and (correct_count / total_attempts_branch) == 1.0:
                     mastered_branches += 1
             
             # 计算掌握度百分比
@@ -1146,20 +1145,16 @@ def get_pgn_user_progress(pgn_id):
                     u.email,
                     COUNT(up.id) as practiced_branches,
                     SUM(CASE WHEN up.is_completed = 1 THEN 1 ELSE 0 END) as completed_branches,
-                    SUM(CASE WHEN up.is_completed = 1 AND (up.correct_count * 1.0 / up.total_attempts) = 1.0 THEN 1 ELSE 0 END) as mastered_branches,
-                    SUM(up.correct_count) as total_correct,
-                    SUM(up.total_attempts) as total_attempts,
+                    SUM(CASE WHEN up.is_completed = 1 AND (up.correct_count * 1.0 / NULLIF(up.total_attempts, 0)) = 1.0 THEN 1 ELSE 0 END) as mastered_branches,
+                    SUM(COALESCE(up.correct_count, 0)) as total_correct,
+                    SUM(COALESCE(up.total_attempts, 0)) as total_attempts,
                     MAX(up.last_attempt_at) as last_practice_time,
                     u.created_at
                 FROM users u
-                LEFT JOIN user_progress up ON u.id = up.user_id AND up.pgn_game_id = ?
-                WHERE EXISTS (
-                    SELECT 1 FROM user_progress 
-                    WHERE user_id = u.id AND pgn_game_id = ?
-                )
+                INNER JOIN user_progress up ON u.id = up.user_id AND up.pgn_game_id = ?
                 GROUP BY u.id, u.username, u.email, u.created_at
                 ORDER BY last_practice_time DESC
-            ''', (pgn_id, pgn_id))
+            ''', (pgn_id,))
             
             user_progress = cursor.fetchall()
             conn.close()
@@ -1286,7 +1281,7 @@ def get_admin_pgn_list():
                     pg.total_games,
                     u.username as uploaded_by_username,
                     COUNT(DISTINCT up.user_id) as users_count,
-                    SUM(up.total_attempts) as total_attempts
+                    SUM(COALESCE(up.total_attempts, 0)) as total_attempts
                 FROM pgn_games pg
                 LEFT JOIN users u ON pg.uploaded_by = u.id
                 LEFT JOIN user_progress up ON pg.id = up.pgn_game_id
@@ -2223,6 +2218,8 @@ def internal_error(error):
         'error': '服务器内部错误',
         'message': '请联系管理员或查看服务器日志'
     }), 500
+
+
 
 if __name__ == '__main__':
     print("🚀 启动国际象棋开局记忆系统后端服务...")
