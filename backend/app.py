@@ -729,7 +729,7 @@ def get_progress_stats():
 @app.route('/api/progress/reset', methods=['POST'])
 @require_login
 def reset_progress():
-    """重置学习进度（只重置未完成的分支）"""
+    """重置学习进度（只重置未掌握的分支，保留已掌握分支）"""
     try:
         data = request.get_json()
         user_id = session['user_id']
@@ -742,36 +742,503 @@ def reset_progress():
             conn = sqlite3.connect(DATABASE_PATH)
             cursor = conn.cursor()
             
-            # 只重置未完成的分支进度（保留已完成的分支）
+            # 只删除未掌握的分支进度记录（未完成或有错误的分支）
             cursor.execute('''
-                UPDATE user_progress 
-                SET correct_count = 0, total_attempts = 0, mastery_level = 0,
-                    last_attempt_at = NULL, updated_at = CURRENT_TIMESTAMP,
-                    notes = ''
-                WHERE user_id = ? AND pgn_game_id = ? AND is_completed = 0
+                DELETE FROM user_progress 
+                WHERE user_id = ? AND pgn_game_id = ? 
+                AND (is_completed = 0 OR (correct_count * 1.0 / total_attempts) < 1.0)
             ''', (user_id, pgn_game_id))
             
-            # 删除未完成分支的学习日志
+            reset_count = cursor.rowcount
+            
+            # 删除对应的学习日志（只删除未掌握分支的日志）
             cursor.execute('''
                 DELETE FROM user_study_logs 
                 WHERE user_id = ? AND pgn_game_id = ? 
-                AND branch_id IN (
+                AND branch_id NOT IN (
                     SELECT branch_id FROM user_progress 
-                    WHERE user_id = ? AND pgn_game_id = ? AND is_completed = 0
+                    WHERE user_id = ? AND pgn_game_id = ? 
+                    AND is_completed = 1 AND (correct_count * 1.0 / total_attempts) = 1.0
                 )
             ''', (user_id, pgn_game_id, user_id, pgn_game_id))
             
-            reset_count = cursor.rowcount
             conn.commit()
             conn.close()
         
         return jsonify({
-            'success': True, 
-            'message': f'已重置{reset_count}个未完成分支的进度，已完成的分支保持不变'
+            'success': True,
+            'message': f'已重置未掌握分支的进度记录 {reset_count} 条，已掌握分支保留'
         })
         
     except Exception as e:
         return jsonify({'error': f'重置进度失败: {str(e)}'}), 500
+
+@app.route('/api/progress/current-stats/<int:pgn_id>', methods=['GET'])
+@require_login
+def get_current_stats(pgn_id):
+    """获取当前PGN的实时统计（包含数据库记录和当前背诵过程）"""
+    try:
+        user_id = session['user_id']
+        
+        with db_lock:
+            conn = sqlite3.connect(DATABASE_PATH)
+            cursor = conn.cursor()
+            
+            # 获取数据库中的统计数据
+            cursor.execute('''
+                SELECT 
+                    SUM(correct_count) as total_correct,
+                    SUM(total_attempts) as total_attempts
+                FROM user_progress 
+                WHERE user_id = ? AND pgn_game_id = ?
+            ''', (user_id, pgn_id))
+            
+            db_stats = cursor.fetchone()
+            conn.close()
+        
+        total_correct = db_stats[0] or 0
+        total_attempts = db_stats[1] or 0
+        
+        # 计算整体正确率
+        accuracy_rate = (total_correct / total_attempts * 100) if total_attempts > 0 else 0
+        
+        return jsonify({
+            'success': True,
+            'total_correct': total_correct,
+            'total_attempts': total_attempts,
+            'accuracy_rate': round(accuracy_rate, 1)
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'获取当前统计失败: {str(e)}'}), 500
+
+@app.route('/api/progress/by-pgn', methods=['GET'])
+@require_login
+def get_progress_by_pgn():
+    """获取按PGN分组的学习进度统计"""
+    try:
+        user_id = session['user_id']
+        
+        with db_lock:
+            conn = sqlite3.connect(DATABASE_PATH)
+            cursor = conn.cursor()
+            
+            # 获取用户所有已练习的PGN的统计信息
+            cursor.execute('''
+                SELECT 
+                    pg.id,
+                    pg.filename,
+                    pg.total_branches,
+                    COUNT(up.id) as practiced_branches,
+                    SUM(CASE WHEN up.is_completed = 1 THEN 1 ELSE 0 END) as completed_branches,
+                    SUM(up.correct_count) as total_correct,
+                    SUM(up.total_attempts) as total_attempts,
+                    AVG(up.mastery_level) as avg_mastery,
+                    MAX(up.last_attempt_at) as last_practice_time,
+                    pg.upload_time
+                FROM pgn_games pg
+                LEFT JOIN user_progress up ON pg.id = up.pgn_game_id AND up.user_id = ?
+                WHERE EXISTS (
+                    SELECT 1 FROM user_progress 
+                    WHERE pgn_game_id = pg.id AND user_id = ?
+                )
+                GROUP BY pg.id, pg.filename, pg.total_branches, pg.upload_time
+                ORDER BY last_practice_time DESC
+            ''', (user_id, user_id))
+            
+            pgn_stats = cursor.fetchall()
+            conn.close()
+        
+        result = []
+        for row in pgn_stats:
+            pgn_id, filename, total_branches, practiced_branches, completed_branches, total_correct, total_attempts, avg_mastery, last_practice_time, upload_time = row
+            
+            # 计算统计数据
+            completion_rate = (completed_branches / total_branches * 100) if total_branches > 0 else 0
+            
+            # 计算整体正确率：包含历史已背完分支和当前背诵分支的合并统计
+            # 这里的total_correct和total_attempts已经包含了所有分支的累计数据
+            accuracy_rate = (total_correct / total_attempts * 100) if total_attempts > 0 else 0
+            
+            # 重新计算掌握度：需要查询每个分支的详细情况
+            with db_lock:
+                conn = sqlite3.connect(DATABASE_PATH)
+                cursor = conn.cursor()
+                
+                # 获取该PGN下所有分支的完成情况和正确率
+                cursor.execute('''
+                    SELECT 
+                        is_completed,
+                        correct_count,
+                        total_attempts
+                    FROM user_progress 
+                    WHERE user_id = ? AND pgn_game_id = ?
+                ''', (session['user_id'], pgn_id))
+                
+                branch_details = cursor.fetchall()
+                conn.close()
+            
+            # 计算真正掌握的分支数（完成且100%正确）
+            mastered_branches = 0
+            for is_completed, correct_count, total_attempts in branch_details:
+                if is_completed and total_attempts > 0 and (correct_count / total_attempts) == 1.0:
+                    mastered_branches += 1
+            
+            # 计算掌握度百分比
+            mastery_rate = (mastered_branches / total_branches * 100) if total_branches > 0 else 0
+            
+            # 确定整体状态
+            if mastery_rate >= 80:
+                status = "已掌握"
+                status_class = "completed"
+            elif completion_rate >= 50:
+                status = "学习中"
+                status_class = "learning"
+            elif completion_rate > 0:
+                status = "初学"
+                status_class = "beginner"
+            else:
+                status = "未开始"
+                status_class = "not-started"
+            
+            result.append({
+                'pgn_id': pgn_id,
+                'filename': filename,
+                'total_branches': total_branches or 0,
+                'practiced_branches': practiced_branches or 0,
+                'completed_branches': completed_branches or 0,
+                'mastered_branches': mastered_branches,  # 新增：真正掌握的分支数
+                'completion_rate': round(completion_rate, 1),
+                'mastery_rate': round(mastery_rate, 1),  # 新增：掌握度百分比
+                'total_correct': total_correct or 0,
+                'total_attempts': total_attempts or 0,
+                'accuracy_rate': round(accuracy_rate, 1),
+                'avg_mastery': round(mastery_rate, 1),  # 使用新的掌握度计算
+                'last_practice_time': last_practice_time,
+                'upload_time': upload_time,
+                'status': status,
+                'status_class': status_class,
+                'notes': ''  # 可以后续添加备注功能
+            })
+        
+        return jsonify({'success': True, 'pgn_progress': result})
+        
+    except Exception as e:
+        return jsonify({'error': f'获取PGN进度统计失败: {str(e)}'}), 500
+
+@app.route('/api/progress/branches/<int:pgn_id>', methods=['GET'])
+@require_login
+def get_branches_progress(pgn_id):
+    """获取指定PGN的所有分支详细进度"""
+    try:
+        user_id = session['user_id']
+        
+        with db_lock:
+            conn = sqlite3.connect(DATABASE_PATH)
+            cursor = conn.cursor()
+            
+            # 获取该PGN的所有分支进度
+            cursor.execute('''
+                SELECT 
+                    up.branch_id,
+                    up.is_completed,
+                    up.correct_count,
+                    up.total_attempts,
+                    up.last_attempt_at,
+                    up.mastery_level,
+                    up.notes
+                FROM user_progress up
+                WHERE up.user_id = ? AND up.pgn_game_id = ?
+                ORDER BY up.branch_id
+            ''', (user_id, pgn_id))
+            
+            branches = cursor.fetchall()
+            
+            # 获取PGN文件名
+            cursor.execute('SELECT filename FROM pgn_games WHERE id = ?', (pgn_id,))
+            pgn_info = cursor.fetchone()
+            
+            conn.close()
+        
+        if not pgn_info:
+            return jsonify({'error': 'PGN文件不存在'}), 404
+        
+        result = []
+        for row in branches:
+            branch_id, is_completed, correct_count, total_attempts, last_attempt_at, mastery_level, notes = row
+            accuracy = (correct_count / total_attempts * 100) if total_attempts > 0 else 0
+            
+            # 计算掌握度：只有完成分支且全部正确时才是100%，否则为0%
+            if is_completed and accuracy == 100:
+                calculated_mastery = 100
+                status = "已掌握"
+                status_class = "completed"
+            elif is_completed and accuracy < 100:
+                calculated_mastery = 0  # 完成了但有错误，掌握度为0%
+                status = "需复习"
+                status_class = "learning"
+            elif total_attempts > 0:
+                calculated_mastery = 0  # 还在学习中，掌握度为0%
+                status = "学习中"
+                status_class = "learning"
+            else:
+                calculated_mastery = 0  # 未开始
+                status = "未开始"
+                status_class = "not-started"
+            
+            result.append({
+                'branch_id': branch_id,
+                'is_completed': is_completed,
+                'correct_count': correct_count or 0,
+                'total_attempts': total_attempts or 0,
+                'accuracy_rate': round(accuracy, 1),
+                'mastery_level': calculated_mastery,  # 使用新的掌握度计算
+                'last_attempt_at': last_attempt_at,
+                'notes': notes or '',
+                'status': status,
+                'status_class': status_class
+            })
+        
+        return jsonify({
+            'success': True, 
+            'pgn_filename': pgn_info[0],
+            'branches': result
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'获取分支进度失败: {str(e)}'}), 500
+
+@app.route('/api/admin/pgn/<int:pgn_id>', methods=['DELETE'])
+@require_admin
+def delete_pgn(pgn_id):
+    """管理员删除PGN（会删除所有用户的相关进度）"""
+    try:
+        with db_lock:
+            conn = sqlite3.connect(DATABASE_PATH)
+            cursor = conn.cursor()
+            
+            # 获取PGN信息
+            cursor.execute('SELECT filename FROM pgn_games WHERE id = ?', (pgn_id,))
+            pgn_info = cursor.fetchone()
+            
+            if not pgn_info:
+                return jsonify({'error': 'PGN文件不存在'}), 404
+            
+            # 删除所有用户的进度记录
+            cursor.execute('DELETE FROM user_progress WHERE pgn_game_id = ?', (pgn_id,))
+            progress_deleted = cursor.rowcount
+            
+            # 删除所有用户的学习日志
+            cursor.execute('DELETE FROM user_study_logs WHERE pgn_game_id = ?', (pgn_id,))
+            logs_deleted = cursor.rowcount
+            
+            # 删除PGN文件记录
+            cursor.execute('DELETE FROM pgn_games WHERE id = ?', (pgn_id,))
+            
+            conn.commit()
+            conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': f'已删除PGN文件 "{pgn_info[0]}"，清理进度记录 {progress_deleted} 条，学习日志 {logs_deleted} 条'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'删除PGN失败: {str(e)}'}), 500
+
+@app.route('/api/admin/pgn/<int:pgn_id>/users', methods=['GET'])
+@require_admin
+def get_pgn_user_progress(pgn_id):
+    """管理员查看指定PGN的所有用户进度"""
+    try:
+        with db_lock:
+            conn = sqlite3.connect(DATABASE_PATH)
+            cursor = conn.cursor()
+            
+            # 获取PGN信息
+            cursor.execute('SELECT filename, total_branches FROM pgn_games WHERE id = ?', (pgn_id,))
+            pgn_info = cursor.fetchone()
+            
+            if not pgn_info:
+                return jsonify({'error': 'PGN文件不存在'}), 404
+            
+            # 获取所有用户在该PGN上的进度
+            cursor.execute('''
+                SELECT 
+                    u.id,
+                    u.username,
+                    u.email,
+                    COUNT(up.id) as practiced_branches,
+                    SUM(CASE WHEN up.is_completed = 1 THEN 1 ELSE 0 END) as completed_branches,
+                    SUM(CASE WHEN up.is_completed = 1 AND (up.correct_count * 1.0 / up.total_attempts) = 1.0 THEN 1 ELSE 0 END) as mastered_branches,
+                    SUM(up.correct_count) as total_correct,
+                    SUM(up.total_attempts) as total_attempts,
+                    MAX(up.last_attempt_at) as last_practice_time,
+                    u.created_at
+                FROM users u
+                LEFT JOIN user_progress up ON u.id = up.user_id AND up.pgn_game_id = ?
+                WHERE EXISTS (
+                    SELECT 1 FROM user_progress 
+                    WHERE user_id = u.id AND pgn_game_id = ?
+                )
+                GROUP BY u.id, u.username, u.email, u.created_at
+                ORDER BY last_practice_time DESC
+            ''', (pgn_id, pgn_id))
+            
+            user_progress = cursor.fetchall()
+            conn.close()
+        
+        filename, total_branches = pgn_info
+        
+        result = []
+        for row in user_progress:
+            user_id, username, email, practiced_branches, completed_branches, mastered_branches, total_correct, total_attempts, last_practice_time, created_at = row
+            
+            completion_rate = (completed_branches / total_branches * 100) if total_branches > 0 else 0
+            mastery_rate = (mastered_branches / total_branches * 100) if total_branches > 0 else 0
+            accuracy_rate = (total_correct / total_attempts * 100) if total_attempts > 0 else 0
+            
+            # 确定状态
+            if mastery_rate >= 80:
+                status = "已掌握"
+                status_class = "completed"
+            elif completion_rate >= 50:
+                status = "学习中"
+                status_class = "learning"
+            elif completion_rate > 0:
+                status = "初学"
+                status_class = "beginner"
+            else:
+                status = "未开始"
+                status_class = "not-started"
+            
+            result.append({
+                'user_id': user_id,
+                'username': username,
+                'email': email or '',
+                'total_branches': total_branches,
+                'practiced_branches': practiced_branches or 0,
+                'completed_branches': completed_branches or 0,
+                'mastered_branches': mastered_branches or 0,
+                'completion_rate': round(completion_rate, 1),
+                'mastery_rate': round(mastery_rate, 1),
+                'total_correct': total_correct or 0,
+                'total_attempts': total_attempts or 0,
+                'accuracy_rate': round(accuracy_rate, 1),
+                'last_practice_time': last_practice_time,
+                'created_at': created_at,
+                'status': status,
+                'status_class': status_class
+            })
+        
+        return jsonify({
+            'success': True,
+            'pgn_filename': filename,
+            'pgn_id': pgn_id,
+            'total_branches': total_branches,
+            'user_progress': result
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'获取用户进度失败: {str(e)}'}), 500
+
+@app.route('/api/admin/pgn/<int:pgn_id>/users/<int:user_id>/reset', methods=['POST'])
+@require_admin
+def admin_reset_user_progress(pgn_id, user_id):
+    """管理员彻底重置指定用户在指定PGN上的所有进度"""
+    try:
+        with db_lock:
+            conn = sqlite3.connect(DATABASE_PATH)
+            cursor = conn.cursor()
+            
+            # 验证PGN和用户是否存在
+            cursor.execute('SELECT filename FROM pgn_games WHERE id = ?', (pgn_id,))
+            pgn_info = cursor.fetchone()
+            
+            cursor.execute('SELECT username FROM users WHERE id = ?', (user_id,))
+            user_info = cursor.fetchone()
+            
+            if not pgn_info:
+                return jsonify({'error': 'PGN文件不存在'}), 404
+            
+            if not user_info:
+                return jsonify({'error': '用户不存在'}), 404
+            
+            # 删除该用户在该PGN上的所有进度记录
+            cursor.execute('''
+                DELETE FROM user_progress 
+                WHERE user_id = ? AND pgn_game_id = ?
+            ''', (user_id, pgn_id))
+            
+            progress_deleted = cursor.rowcount
+            
+            # 删除该用户在该PGN上的所有学习日志
+            cursor.execute('''
+                DELETE FROM user_study_logs 
+                WHERE user_id = ? AND pgn_game_id = ?
+            ''', (user_id, pgn_id))
+            
+            logs_deleted = cursor.rowcount
+            
+            conn.commit()
+            conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': f'已彻底重置用户 "{user_info[0]}" 在PGN "{pgn_info[0]}" 上的所有进度，清理进度记录 {progress_deleted} 条，学习日志 {logs_deleted} 条'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'重置用户进度失败: {str(e)}'}), 500
+
+@app.route('/api/admin/pgn-list', methods=['GET'])
+@require_admin
+def get_admin_pgn_list():
+    """管理员获取所有PGN列表"""
+    try:
+        with db_lock:
+            conn = sqlite3.connect(DATABASE_PATH)
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT 
+                    pg.id,
+                    pg.filename,
+                    pg.upload_time,
+                    pg.file_size,
+                    pg.total_branches,
+                    pg.total_games,
+                    u.username as uploaded_by_username,
+                    COUNT(DISTINCT up.user_id) as users_count,
+                    SUM(up.total_attempts) as total_attempts
+                FROM pgn_games pg
+                LEFT JOIN users u ON pg.uploaded_by = u.id
+                LEFT JOIN user_progress up ON pg.id = up.pgn_game_id
+                GROUP BY pg.id, pg.filename, pg.upload_time, pg.file_size, pg.total_branches, pg.total_games, u.username
+                ORDER BY pg.upload_time DESC
+            ''')
+            
+            rows = cursor.fetchall()
+            conn.close()
+        
+        result = []
+        for row in rows:
+            result.append({
+                'id': row[0],
+                'filename': row[1],
+                'upload_time': row[2],
+                'file_size': row[3],
+                'total_branches': row[4],
+                'total_games': row[5],
+                'uploaded_by': row[6] or '未知',
+                'users_count': row[7] or 0,
+                'total_attempts': row[8] or 0
+            })
+        
+        return jsonify({'success': True, 'pgn_list': result})
+        
+    except Exception as e:
+        return jsonify({'error': f'获取PGN列表失败: {str(e)}'}), 500
 
 def save_pgn_to_db(filename: str, original_content: str, parsed_data: dict, file_size: int):
     """保存PGN数据到数据库"""
@@ -1090,6 +1557,35 @@ def parse_pgn():
         if file.filename == '':
             return jsonify({'error': '没有选择文件'}), 400
         
+        # 检查是否强制覆盖
+        force_overwrite = request.form.get('force_overwrite', 'false').lower() == 'true'
+        
+        # 检查是否存在同名文件
+        with db_lock:
+            conn = sqlite3.connect(DATABASE_PATH)
+            cursor = conn.cursor()
+            cursor.execute('SELECT id, filename FROM pgn_games WHERE filename = ?', (file.filename,))
+            existing_pgn = cursor.fetchone()
+            conn.close()
+        
+        current_user = get_current_user()
+        
+        # 如果存在同名文件且不是强制覆盖，需要管理员确认
+        if existing_pgn and not force_overwrite:
+            if current_user and current_user['role'] == 'admin':
+                return jsonify({
+                    'conflict': True,
+                    'message': f'已存在同名PGN文件 "{file.filename}"',
+                    'existing_pgn_id': existing_pgn[0],
+                    'question': '是否要覆盖原有文件并重置所有用户的进度？',
+                    'warning': '⚠️ 覆盖操作将删除所有用户在该PGN上的学习进度，此操作不可撤销！'
+                })
+            else:
+                return jsonify({
+                    'error': '文件名冲突',
+                    'message': f'已存在同名PGN文件 "{file.filename}"，请联系管理员处理或重命名文件'
+                }), 409
+        
         # 尝试读取文件内容，支持多种编码
         content = None
         file_info = {
@@ -1157,6 +1653,26 @@ def parse_pgn():
         result['tree_html'] = tree_html
         result['file_info'] = file_info
         
+        # 如果是覆盖操作，先删除原有数据
+        if existing_pgn and force_overwrite:
+            with db_lock:
+                conn = sqlite3.connect(DATABASE_PATH)
+                cursor = conn.cursor()
+                
+                # 删除所有用户的进度记录
+                cursor.execute('DELETE FROM user_progress WHERE pgn_game_id = ?', (existing_pgn[0],))
+                
+                # 删除所有用户的学习日志
+                cursor.execute('DELETE FROM user_study_logs WHERE pgn_game_id = ?', (existing_pgn[0],))
+                
+                # 删除原有PGN记录
+                cursor.execute('DELETE FROM pgn_games WHERE id = ?', (existing_pgn[0],))
+                
+                conn.commit()
+                conn.close()
+                
+                print(f"覆盖操作：已删除原有PGN '{file.filename}' (ID: {existing_pgn[0]}) 及相关数据")
+        
         # 保存到数据库
         try:
             game_id = save_pgn_to_db(
@@ -1172,7 +1688,14 @@ def parse_pgn():
                 'filename': file.filename,
                 'file_size': file_info['size']
             }
-            print(f"成功保存PGN到数据库，ID: {game_id}, 文件名: {file.filename}")
+            
+            if existing_pgn and force_overwrite:
+                result['overwritten'] = True
+                result['message'] = f"成功覆盖PGN文件 {file.filename}，所有用户的学习进度已重置"
+                print(f"成功覆盖保存PGN到数据库，新ID: {game_id}, 文件名: {file.filename}")
+            else:
+                print(f"成功保存PGN到数据库，ID: {game_id}, 文件名: {file.filename}")
+                
         except Exception as e:
             print(f"保存到数据库失败: {str(e)}")
             # 不影响返回结果，只记录错误
@@ -1314,6 +1837,53 @@ def get_pgn_list_api():
         return jsonify({
             'error': '获取PGN列表失败',
             'message': str(e)
+        }), 500
+
+@app.route('/api/pgn/<int:pgn_id>', methods=['GET'])
+@require_login
+def get_pgn_by_id(pgn_id):
+    """根据ID获取PGN数据"""
+    try:
+        with db_lock:
+            conn = sqlite3.connect(DATABASE_PATH)
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT id, filename, original_content, parsed_data, upload_time, file_size
+                FROM pgn_games 
+                WHERE id = ?
+            ''', (pgn_id,))
+            
+            row = cursor.fetchone()
+            conn.close()
+            
+            if not row:
+                return jsonify({
+                    'success': False,
+                    'error': '未找到指定的PGN文件'
+                }), 404
+            
+            # 解析存储的数据
+            parsed_data = json.loads(row[3]) if row[3] else {}
+            
+            # 构建返回数据，格式与 latest-pgn API 类似
+            response_data = parsed_data.copy()
+            response_data['metadata'] = {
+                'id': row[0],
+                'filename': row[1],
+                'upload_time': row[4],
+                'file_size': row[5],
+                'total_branches': len(parsed_data.get('branches', [])),
+                'total_games': parsed_data.get('total_games', 0)
+            }
+            
+            return jsonify(response_data)
+            
+    except Exception as e:
+        print(f"获取PGN数据失败: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': f'获取PGN数据失败: {str(e)}'
         }), 500
 
 @app.route('/api/health', methods=['GET'])

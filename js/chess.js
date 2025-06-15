@@ -515,19 +515,54 @@ class ChessBoard {
         if (progress === 100 && total > 0) {
             // 计算最终正确率
             const finalAccuracy = this.totalMoves > 0 ? Math.round((this.correctMoves / this.totalMoves) * 100) : 0;
+            const finalAccuracyText = this.totalMoves > 0 ? `${this.correctMoves}/${this.totalMoves} (${finalAccuracy}%)` : '0/0 (0%)';
             
             // 更新完成横幅显示最终正确率
-            $('#completionBanner').html(`🎉 恭喜！您已背完所有分支！最终正确率：<span style="font-weight: bold;">${finalAccuracy}%</span>`);
+            $('#completionBanner').html(`🎉 恭喜！您已背完所有分支！最终正确率：<span style="font-weight: bold;">${finalAccuracyText}</span>`);
             $('#completionBanner').show();
         }
     }
 
     updateAccuracy() {
-        // 计算正确率
+        // 如果有当前PGN ID，从后端获取累积正确率
+        if (window.currentPgnId && window.chessAPI && window.chessAPI.isBackendAvailable) {
+            this.updateAccuracyFromBackend();
+        } else {
+            // 后备方案：使用当前会话的数据计算正确率
+            const accuracy = this.totalMoves > 0 ? Math.round((this.correctMoves / this.totalMoves) * 100) : 0;
+            this.displayAccuracy(accuracy, this.correctMoves, this.totalMoves);
+        }
+    }
+
+    async updateAccuracyFromBackend() {
+        try {
+            const response = await fetch(`${window.chessAPI.baseURL}/progress/current-stats/${window.currentPgnId}`, {
+                credentials: 'include'
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                if (result.success) {
+                    // 使用后端返回的累积正确率，包含分子分母
+                    this.displayAccuracy(result.accuracy_rate, result.total_correct, result.total_attempts);
+                    console.log(`正确率更新（后端数据）: ${result.total_correct}/${result.total_attempts} = ${result.accuracy_rate}%`);
+                    return;
+                }
+            }
+        } catch (error) {
+            console.error('获取后端正确率失败:', error);
+        }
+
+        // 如果后端获取失败，使用当前会话数据
         const accuracy = this.totalMoves > 0 ? Math.round((this.correctMoves / this.totalMoves) * 100) : 0;
-        
-        // 更新UI显示
-        $('#accuracy').text(`${accuracy}%`);
+        this.displayAccuracy(accuracy, this.correctMoves, this.totalMoves);
+        console.log(`正确率更新（会话数据）: ${this.correctMoves}/${this.totalMoves} = ${accuracy}%`);
+    }
+
+    displayAccuracy(accuracy, correct = 0, total = 0) {
+        // 更新UI显示，包含分子分母格式
+        const accuracyText = total > 0 ? `${correct}/${total} (${accuracy}%)` : '0/0 (0%)';
+        $('#accuracy').text(accuracyText);
         
         // 根据正确率设置不同的颜色
         const accuracyElement = $('#accuracy');
@@ -538,8 +573,6 @@ class ChessBoard {
         } else {
             accuracyElement.css('color', '#f44336'); // 红色 - 需要改进
         }
-        
-        console.log(`正确率更新: ${this.correctMoves}/${this.totalMoves} = ${accuracy}%`);
     }
 
     isCurrentBranchCompleted() {
@@ -567,13 +600,14 @@ class ChessBoard {
     showBranchCompletedModal() {
         // 计算当前正确率
         const accuracy = this.totalMoves > 0 ? Math.round((this.correctMoves / this.totalMoves) * 100) : 0;
+        const accuracyText = this.totalMoves > 0 ? `${this.correctMoves}/${this.totalMoves} (${accuracy}%)` : '0/0 (0%)';
         
         const modal = $(`
             <div class="modal-overlay">
                 <div class="modal-content">
                     <h3>🎉 分支背诵完成！</h3>
                     <p>恭喜您成功背完了当前分支！</p>
-                    <p>当前累积正确率：<span style="color: #4CAF50; font-weight: bold;">${accuracy}%</span></p>
+                    <p>当前累积正确率：<span style="color: #4CAF50; font-weight: bold;">${accuracyText}</span></p>
                     <p>即将自动回到初始位置...</p>
                 </div>
             </div>
@@ -1057,8 +1091,6 @@ class ChessBoard {
         this.clearHighlights();
     }
 
-
-
     // 尝试移动棋子
     attemptMove(from, to) {
         console.log(`尝试移动: ${from} 到 ${to}`);
@@ -1104,6 +1136,9 @@ class ChessBoard {
             this.totalMoves++;
             this.updateAccuracy();
             
+            // 记录错误移动到数据库
+            this.recordMoveProgress(false);
+            
             this.showError();
             return false;
         }
@@ -1117,6 +1152,9 @@ class ChessBoard {
         this.correctMoves++;
         this.totalMoves++;
         this.updateAccuracy();
+        
+        // 记录正确移动到数据库
+        this.recordMoveProgress(true);
 
         // 更新当前分支
         this.currentBranch = matchingBranch;
@@ -1296,7 +1334,18 @@ class ChessBoard {
                 0, // duration - 我们可以添加计时逻辑
                 '',  // notes
                 isBranchEnd  // 是否到达分支最后一步
-            );
+            ).then(() => {
+                // 进度更新完成后，刷新正确率显示
+                setTimeout(() => {
+                    this.updateAccuracy();
+                }, 100);
+            }).catch(() => {
+                // 如果进度更新失败，仍然更新正确率显示
+                this.updateAccuracy();
+            });
+        } else {
+            // 如果没有updateProgress函数，直接更新正确率
+            this.updateAccuracy();
         }
     }
 
@@ -1317,7 +1366,18 @@ class ChessBoard {
                 0, // duration
                 isCompleted ? '分支已完成' : '',
                 isBranchEnd // 新增：是否到达分支最后一步
-            );
+            ).then(() => {
+                // 进度更新完成后，刷新正确率显示
+                setTimeout(() => {
+                    this.updateAccuracy();
+                }, 100);
+            }).catch(() => {
+                // 如果进度更新失败，仍然更新正确率显示
+                this.updateAccuracy();
+            });
+        } else {
+            // 如果没有updateProgress函数，直接更新正确率
+            this.updateAccuracy();
         }
     }
 
@@ -1360,6 +1420,9 @@ class ChessBoard {
                     
                     // 更新进度显示
                     this.updateProgress();
+                    
+                    // 更新正确率显示
+                    this.updateAccuracy();
                     
                     console.log(`✅ 用户进度加载完成，已完成分支数：${this.completedBranches.size}`);
                 } else {

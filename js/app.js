@@ -15,20 +15,17 @@ $(document).ready(function() {
                 // 初始化API（检测后端连接和加载本地存储）
                 const hasStoredData = await window.chessAPI.init();
                 
-                // 移动端UI优化
+                // 检查URL参数，如果有pgn_id，加载特定的PGN数据
+                const urlParams = new URLSearchParams(window.location.search);
+                const pgnId = urlParams.get('pgn_id');
+                if (pgnId) {
+                    console.log('从URL参数加载PGN ID:', pgnId);
+                    await loadPGNById(parseInt(pgnId));
+                }
+                
+                // 移动端UI优化（按钮已移除，保留注释以备将来使用）
                 if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
-                    // 隐藏移动端不需要的按钮
-                    const loadPgnBtn = document.getElementById('loadPgn');
-                    const clearStorageBtn = document.getElementById('clearStorage');
-                    
-                    if (loadPgnBtn) {
-                        loadPgnBtn.style.display = 'none';
-                        console.log('移动端：隐藏加载对局按钮');
-                    }
-                    if (clearStorageBtn) {
-                        clearStorageBtn.style.display = 'none';
-                        console.log('移动端：隐藏清除棋谱按钮');
-                    }
+                    console.log('移动端设备检测');
                 }
                 
                 // 更新UI状态
@@ -92,80 +89,7 @@ $(document).ready(function() {
         });
     }, 1000);
 
-    // 加载PGN文件
-    $('#loadPgn').click(function() {
-        $('#pgnInput').click();
-    });
 
-    $('#pgnInput').change(function(e) {
-        const file = e.target.files[0];
-        if (file) {
-            console.log('用户选择了文件:', file.name);
-            
-            // 显示加载状态
-            $('#loadPgn').prop('disabled', true).text('解析中...');
-            
-            // 记录解析开始时间
-            const startTime = Date.now();
-            
-            // 使用API类上传文件
-            window.chessAPI.uploadPGN(file)
-                .then(function(response) {
-                    const duration = Date.now() - startTime;
-                    console.log('PGN解析成功, 耗时:', duration + 'ms');
-                    
-                    // 验证解析结果
-                    if (!response.branches || response.branches.length === 0) {
-                        throw new Error('解析结果中没有找到有效的分支数据');
-                    }
-                    
-                    // 存储解析结果
-                    window.pgnParser = response;
-                    
-                    // 重置棋盘状态
-                    window.chessBoard.completedBranches.clear();
-                    window.chessBoard.computerUsedBranches.clear();
-                    
-                    // 加载用户进度
-                    if (window.chessBoard && typeof window.chessBoard.loadUserProgress === 'function') {
-                        setTimeout(async () => {
-                            await window.chessBoard.loadUserProgress();
-                        }, 500);
-                    }
-                    
-                    // 更新UI
-                    updateUI();
-                    
-                    // 显示成功消息
-                    showNotification(`成功加载 ${response.branches.length} 个分支！`, 'success');
-                })
-                .catch(function(error) {
-                    console.error('PGN解析失败:', error);
-                    
-                    // 提供更具体的错误信息
-                    let errorMessage = 'PGN文件解析失败！';
-                    
-                    if (error.message.includes('后端服务不可用')) {
-                        errorMessage = '后端服务未启动，请先运行start_backend.bat';
-                    } else if (error.message.includes('网络')) {
-                        errorMessage = '网络连接问题，请检查网络后重试';
-                    } else {
-                        errorMessage += ' 错误详情: ' + error.message;
-                    }
-                    
-                    showNotification(errorMessage, 'error');
-                })
-                .finally(function() {
-                    // 恢复按钮状态
-                    $('#loadPgn').prop('disabled', false).text('📁 加载对局');
-                    
-                    // 清空文件输入，允许重新选择同一文件
-                    $('#pgnInput').val('');
-                });
-        } else {
-            console.log('用户取消了文件选择');
-        }
-    });
 
     // 开始背谱
     $('#startStudy').click(async function() {
@@ -205,8 +129,15 @@ $(document).ready(function() {
                     if (result.success) {
                         showNotification(result.message, 'success');
                         
+                        // 清空当前的完成分支记录，准备重新加载
+                        window.chessBoard.completedBranches.clear();
+                        
                         // 重新加载用户进度，保留已完成的分支
                         await window.chessBoard.loadUserProgress();
+                        
+                        // 强制更新所有UI显示
+                        window.chessBoard.updateProgress();
+                        window.chessBoard.updateAccuracy();
                     }
                 } else {
                     console.error('重置进度失败:', response.status, response.statusText);
@@ -242,36 +173,7 @@ $(document).ready(function() {
         showNotification('已重置背诵状态，棋谱数据保留', 'success');
     });
 
-    // 清除本地存储
-    $('#clearStorage').click(function() {
-        if (confirm('确定要清除保存的棋谱数据吗？此操作不可恢复。')) {
-            // 清除本地存储
-            window.chessAPI.clearStorage();
-            
-            // 清除当前加载的数据
-            window.pgnParser = null;
-            
-            // 重置棋盘状态
-            window.chessBoard.completedBranches.clear();
-            window.chessBoard.computerUsedBranches.clear();
-            window.chessBoard.stopStudy();
-            
-            // 重置正确率统计
-            window.chessBoard.correctMoves = 0;
-            window.chessBoard.totalMoves = 0;
-            window.chessBoard.updateAccuracy();
-            
-            window.chessBoard.resetPosition(true);
-            
-            // 更新UI
-            updateUI();
-            
-            // 隐藏完成横幅
-            $('#completionBanner').hide();
-            
-            showNotification('已清除所有棋谱数据', 'success');
-        }
-    });
+
 
     // 监听颜色选择变化
     $('input[name="color"]').change(function() {
@@ -284,7 +186,93 @@ $(document).ready(function() {
         }
     });
 
-    function updateUI() {
+// 根据PGN ID加载数据
+async function loadPGNById(pgnId) {
+    try {
+        console.log('加载PGN ID:', pgnId);
+        
+        // 显示加载状态
+        console.log('开始加载PGN数据...');
+        
+        // 调用API获取PGN数据
+        const response = await fetch(`${window.chessAPI.baseURL}/pgn/${pgnId}`, {
+            credentials: 'include'
+        });
+        
+        if (!response.ok) {
+            if (response.status === 404) {
+                throw new Error('未找到指定的PGN文件');
+            } else if (response.status === 401) {
+                throw new Error('请先登录');
+            } else {
+                throw new Error(`加载失败: ${response.status}`);
+            }
+        }
+        
+        const pgnData = await response.json();
+        
+        // 验证数据
+        if (!pgnData.branches || pgnData.branches.length === 0) {
+            throw new Error('PGN文件中没有找到有效的分支数据');
+        }
+        
+        // 存储解析结果
+        window.pgnParser = pgnData;
+        
+        // 重置棋盘状态
+        window.chessBoard.completedBranches.clear();
+        window.chessBoard.computerUsedBranches.clear();
+        
+        // 加载用户进度
+        if (window.chessBoard && typeof window.chessBoard.loadUserProgress === 'function') {
+            setTimeout(async () => {
+                await window.chessBoard.loadUserProgress();
+            }, 500);
+        }
+        
+        // 更新UI
+        updateUI();
+        
+        // 显示PGN文件名和分支数量
+        const filename = pgnData.metadata?.filename || '未知文件';
+        showNotification(`成功加载 ${filename}，共 ${pgnData.branches.length} 个分支！`, 'success');
+        
+        console.log('PGN数据加载成功:', {
+            filename: filename,
+            branches: pgnData.branches.length,
+            games: pgnData.metadata?.total_games
+        });
+        
+    } catch (error) {
+        console.error('加载PGN数据失败:', error);
+        
+        let errorMessage = 'PGN文件加载失败！';
+        if (error.message.includes('未找到')) {
+            errorMessage = '未找到指定的PGN文件，可能已被删除';
+        } else if (error.message.includes('登录')) {
+            errorMessage = '请先登录后再尝试学习';
+            // 跳转到登录页面
+            setTimeout(() => {
+                window.location.href = '/login.html';
+            }, 2000);
+        } else {
+            errorMessage += ' 错误详情: ' + error.message;
+        }
+        
+        showNotification(errorMessage, 'error');
+        
+        // 如果加载失败，可以跳转回进度页面
+        setTimeout(() => {
+            window.location.href = '/progress.html';
+        }, 3000);
+        
+    } finally {
+        // 加载完成
+        console.log('PGN数据加载完成');
+    }
+}
+
+function updateUI() {
         if (window.pgnParser && window.pgnParser.branches) {
             // 启用开始背谱按钮
             $('#startStudy').prop('disabled', false);
@@ -299,7 +287,7 @@ $(document).ready(function() {
             $('#totalBranches').text('0');
             $('#completedBranches').text('0');
             $('#progress').text('0%');
-            $('#accuracy').text('0%').css('color', '#2196F3');
+            $('#accuracy').text('0/0 (0%)').css('color', '#2196F3');
         }
         
         // 更新按钮状态

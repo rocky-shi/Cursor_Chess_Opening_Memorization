@@ -461,6 +461,23 @@
             </div>
         </div>
 
+        <!-- PGN管理 -->
+        <div class="card">
+            <div class="card-header">
+                <h2>PGN文件管理</h2>
+                <div style="display: flex; gap: 10px;">
+                    <button class="btn btn-primary" onclick="showUploadPGN()">📁 上传PGN文件</button>
+                    <button class="btn btn-success" onclick="refreshPGNList()">刷新列表</button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="pgnAlertContainer"></div>
+                <div id="pgnTableContainer">
+                    <div class="loading">正在加载PGN数据...</div>
+                </div>
+            </div>
+        </div>
+
         <!-- 用户管理 -->
         <div class="card">
             <div class="card-header">
@@ -471,6 +488,50 @@
                 <div id="alertContainer"></div>
                 <div id="usersTableContainer">
                     <div class="loading">正在加载用户数据...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PGN上传模态框 -->
+    <div id="pgnUploadModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>上传PGN文件</h3>
+                <span class="close" onclick="closePGNUploadModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="uploadAlertContainer"></div>
+                <div class="form-group">
+                    <label for="pgnFileInput">选择PGN文件</label>
+                    <input type="file" id="pgnFileInput" accept=".pgn,.txt" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                    <small style="color: #666; font-size: 0.8rem;">支持 .pgn 和 .txt 格式的文件</small>
+                </div>
+                <div id="uploadProgress" style="display: none; margin-top: 1rem;">
+                    <div style="background: #f0f0f0; border-radius: 4px; overflow: hidden;">
+                        <div id="progressBar" style="height: 20px; background: #007bff; width: 0%; transition: width 0.3s;"></div>
+                    </div>
+                    <div id="progressText" style="text-align: center; margin-top: 5px; font-size: 0.9rem;">0%</div>
+                </div>
+                <div style="text-align: right; margin-top: 1.5rem;">
+                    <button type="button" class="btn btn-secondary" onclick="closePGNUploadModal()">取消</button>
+                    <button type="button" class="btn btn-primary" id="uploadPGNBtn" onclick="uploadPGNFile()">上传</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- PGN用户进度查看模态框 -->
+    <div id="pgnUsersModal" class="modal">
+        <div class="modal-content" style="max-width: 90%; width: 1200px;">
+            <div class="modal-header">
+                <h3 id="pgnUsersModalTitle">PGN用户进度</h3>
+                <span class="close" onclick="closePGNUsersModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="pgnUsersAlertContainer"></div>
+                <div id="pgnUsersTableContainer">
+                    <div class="loading">正在加载用户进度数据...</div>
                 </div>
             </div>
         </div>
@@ -573,6 +634,7 @@
                 // 初始化页面数据
                 await loadStats();
                 await loadUsers();
+                await loadPGNList();
             } catch (error) {
                 console.error('认证检查失败:', error);
                 window.location.href = '/login.html';
@@ -837,11 +899,438 @@
             return date.toLocaleString('zh-CN');
         }
 
+        // ================ PGN管理相关函数 ================
+
+        let pgnList = [];
+
+        // 加载PGN列表
+        async function loadPGNList() {
+            try {
+                const response = await fetch(`${API_BASE}/admin/pgn-list`, {
+                    credentials: 'include'
+                });
+
+                if (!response.ok) {
+                    throw new Error('获取PGN列表失败');
+                }
+
+                const result = await response.json();
+                pgnList = result.pgn_list || [];
+                renderPGNTable();
+            } catch (error) {
+                console.error('加载PGN列表失败:', error);
+                showPGNAlert('加载PGN列表失败: ' + error.message, 'danger');
+            }
+        }
+
+        // 刷新PGN列表
+        async function refreshPGNList() {
+            document.getElementById('pgnTableContainer').innerHTML = '<div class="loading">正在刷新PGN数据...</div>';
+            await loadPGNList();
+        }
+
+        // 渲染PGN表格
+        function renderPGNTable() {
+            const container = document.getElementById('pgnTableContainer');
+            
+            if (pgnList.length === 0) {
+                container.innerHTML = '<div class="empty-state">暂无PGN文件</div>';
+                return;
+            }
+
+            const tableHTML = `
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>文件名</th>
+                            <th>上传时间</th>
+                            <th>文件大小</th>
+                            <th>总分支数</th>
+                            <th>游戏数</th>
+                            <th>上传者</th>
+                            <th>使用用户数</th>
+                            <th>总练习次数</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${pgnList.map(pgn => `
+                            <tr>
+                                <td>${pgn.id}</td>
+                                <td>
+                                    <strong>${pgn.filename}</strong>
+                                    ${pgn.filename.length > 20 ? `<br><small style="color: #666;">${pgn.filename}</small>` : ''}
+                                </td>
+                                <td>${formatDateTime(pgn.upload_time)}</td>
+                                <td>${formatFileSize(pgn.file_size)}</td>
+                                <td>
+                                    <span class="badge badge-user">${pgn.total_branches}</span>
+                                </td>
+                                <td>${pgn.total_games}</td>
+                                <td>${pgn.uploaded_by}</td>
+                                <td>
+                                    <span class="badge badge-active">${pgn.users_count}</span>
+                                </td>
+                                <td>
+                                    <span class="badge badge-admin">${pgn.total_attempts}</span>
+                                </td>
+                                <td>
+                                    <button class="btn btn-info" onclick="viewPGNUsers(${pgn.id}, '${pgn.filename.replace(/'/g, '\\\'')}')" style="font-size: 0.8rem; margin-right: 5px;">查看用户</button>
+                                    <button class="btn btn-danger" onclick="deletePGN(${pgn.id}, '${pgn.filename.replace(/'/g, '\\\'')}')" style="font-size: 0.8rem;">删除</button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+
+            container.innerHTML = tableHTML;
+        }
+
+        // 删除PGN
+        async function deletePGN(pgnId, filename) {
+            if (!confirm(`⚠️ 危险操作确认\n\n确定要删除PGN文件 "${filename}" 吗？\n\n此操作将：\n• 永久删除该PGN文件\n• 清除所有用户在该PGN上的学习进度\n• 删除相关的学习日志记录\n\n此操作不可撤销！`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/pgn/${pgnId}`, {
+                    method: 'DELETE',
+                    credentials: 'include'
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    showPGNAlert(result.message || 'PGN删除成功', 'success');
+                    await loadPGNList(); // 重新加载列表
+                    await loadStats(); // 更新统计信息
+                } else {
+                    showPGNAlert(result.error || '删除失败', 'danger');
+                }
+            } catch (error) {
+                showPGNAlert('网络错误: ' + error.message, 'danger');
+                console.error('删除PGN失败:', error);
+            }
+        }
+
+        // 显示PGN相关提示信息
+        function showPGNAlert(message, type = 'danger') {
+            document.getElementById('pgnAlertContainer').innerHTML = `
+                <div class="alert alert-${type}">
+                    ${message}
+                </div>
+            `;
+            
+            // 5秒后自动清除
+            setTimeout(() => {
+                document.getElementById('pgnAlertContainer').innerHTML = '';
+            }, 5000);
+        }
+
+        // 格式化文件大小
+        function formatFileSize(bytes) {
+            if (!bytes || bytes === 0) return '0 B';
+            
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // ================ PGN上传相关函数 ================
+
+        // 显示PGN上传模态框
+        function showUploadPGN() {
+            document.getElementById('pgnUploadModal').style.display = 'block';
+            document.getElementById('uploadAlertContainer').innerHTML = '';
+            document.getElementById('pgnFileInput').value = '';
+            document.getElementById('uploadProgress').style.display = 'none';
+        }
+
+        // 关闭PGN上传模态框
+        function closePGNUploadModal() {
+            document.getElementById('pgnUploadModal').style.display = 'none';
+        }
+
+        // 上传PGN文件
+        async function uploadPGNFile() {
+            const fileInput = document.getElementById('pgnFileInput');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                showUploadAlert('请选择要上传的PGN文件', 'danger');
+                return;
+            }
+
+            // 检查文件大小（限制为10MB）
+            if (file.size > 10 * 1024 * 1024) {
+                showUploadAlert('文件大小不能超过10MB', 'danger');
+                return;
+            }
+
+            const uploadBtn = document.getElementById('uploadPGNBtn');
+            const originalText = uploadBtn.textContent;
+            
+            try {
+                // 显示上传进度
+                document.getElementById('uploadProgress').style.display = 'block';
+                uploadBtn.disabled = true;
+                uploadBtn.textContent = '上传中...';
+                
+                // 模拟进度更新
+                let progress = 0;
+                const progressInterval = setInterval(() => {
+                    progress += Math.random() * 30;
+                    if (progress > 90) progress = 90;
+                    updateProgress(progress);
+                }, 200);
+
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const response = await fetch(`${API_BASE}/parse-pgn`, {
+                    method: 'POST',
+                    body: formData,
+                    credentials: 'include'
+                });
+
+                clearInterval(progressInterval);
+                updateProgress(100);
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    showUploadAlert(`上传成功！解析出 ${result.total_branches} 个分支`, 'success');
+                    
+                    // 延迟关闭模态框并刷新列表
+                    setTimeout(async () => {
+                        closePGNUploadModal();
+                        await loadPGNList();
+                        await loadStats();
+                    }, 2000);
+                    
+                } else if (result.conflict) {
+                    // 处理文件名冲突
+                    const confirmOverwrite = confirm(
+                        `${result.message}\n\n${result.question}\n\n${result.warning}`
+                    );
+                    
+                    if (confirmOverwrite) {
+                        // 重新上传，强制覆盖
+                        const overwriteFormData = new FormData();
+                        overwriteFormData.append('file', file);
+                        overwriteFormData.append('force_overwrite', 'true');
+                        
+                        const overwriteResponse = await fetch(`${API_BASE}/parse-pgn`, {
+                            method: 'POST',
+                            body: overwriteFormData,
+                            credentials: 'include'
+                        });
+                        
+                        const overwriteResult = await overwriteResponse.json();
+                        
+                        if (overwriteResponse.ok && overwriteResult.success) {
+                            showUploadAlert(`覆盖成功！解析出 ${overwriteResult.total_branches} 个分支`, 'success');
+                            setTimeout(async () => {
+                                closePGNUploadModal();
+                                await loadPGNList();
+                                await loadStats();
+                            }, 2000);
+                        } else {
+                            showUploadAlert(overwriteResult.error || '覆盖失败', 'danger');
+                        }
+                    }
+                } else {
+                    showUploadAlert(result.error || '上传失败', 'danger');
+                }
+
+            } catch (error) {
+                console.error('上传PGN失败:', error);
+                showUploadAlert('网络错误: ' + error.message, 'danger');
+            } finally {
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = originalText;
+            }
+        }
+
+        // 更新上传进度
+        function updateProgress(percent) {
+            const progressBar = document.getElementById('progressBar');
+            const progressText = document.getElementById('progressText');
+            
+            progressBar.style.width = percent + '%';
+            progressText.textContent = Math.round(percent) + '%';
+        }
+
+        // 显示上传相关提示信息
+        function showUploadAlert(message, type = 'danger') {
+            document.getElementById('uploadAlertContainer').innerHTML = `
+                <div class="alert alert-${type}">
+                    ${message}
+                </div>
+            `;
+        }
+
+        // ================ PGN用户进度管理相关函数 ================
+
+        // 查看PGN用户进度
+        async function viewPGNUsers(pgnId, filename) {
+            document.getElementById('pgnUsersModalTitle').textContent = `${filename} - 用户学习进度`;
+            document.getElementById('pgnUsersModal').style.display = 'block';
+            document.getElementById('pgnUsersAlertContainer').innerHTML = '';
+            
+            try {
+                const response = await fetch(`${API_BASE}/admin/pgn/${pgnId}/users`, {
+                    credentials: 'include'
+                });
+
+                if (!response.ok) {
+                    throw new Error('获取用户进度失败');
+                }
+
+                const result = await response.json();
+                if (!result.success) {
+                    throw new Error('获取用户进度失败');
+                }
+
+                renderPGNUsersTable(result);
+            } catch (error) {
+                console.error('加载PGN用户进度失败:', error);
+                showPGNUsersAlert('加载用户进度失败: ' + error.message, 'danger');
+            }
+        }
+
+        // 关闭PGN用户进度模态框
+        function closePGNUsersModal() {
+            document.getElementById('pgnUsersModal').style.display = 'none';
+        }
+
+        // 渲染PGN用户进度表格
+        function renderPGNUsersTable(data) {
+            const container = document.getElementById('pgnUsersTableContainer');
+            
+            if (!data.user_progress || data.user_progress.length === 0) {
+                container.innerHTML = '<div class="empty-state">该PGN文件暂无用户学习记录</div>';
+                return;
+            }
+
+            const tableHTML = `
+                <div style="margin-bottom: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 8px;">
+                    <h4 style="margin: 0 0 0.5rem 0; color: #2c3e50;">📊 ${data.pgn_filename}</h4>
+                    <p style="margin: 0; color: #666; font-size: 0.9rem;">总分支数: ${data.total_branches} | 学习用户数: ${data.user_progress.length}</p>
+                </div>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>用户ID</th>
+                            <th>用户名</th>
+                            <th>邮箱</th>
+                            <th>状态</th>
+                            <th>掌握度</th>
+                            <th>已练习</th>
+                            <th>已完成</th>
+                            <th>已掌握</th>
+                            <th>正确率</th>
+                            <th>最后练习</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.user_progress.map(user => `
+                            <tr>
+                                <td>${user.user_id}</td>
+                                <td><strong>${user.username}</strong></td>
+                                <td>${user.email || '-'}</td>
+                                <td>
+                                    <span class="badge badge-${user.status_class}">${user.status}</span>
+                                </td>
+                                <td>
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <div style="width: 60px; height: 8px; background: #f0f0f0; border-radius: 4px; overflow: hidden;">
+                                            <div style="height: 100%; background: #007bff; width: ${user.mastery_rate}%;"></div>
+                                        </div>
+                                        <span style="font-size: 0.8rem; font-weight: bold;">${user.mastery_rate}%</span>
+                                    </div>
+                                </td>
+                                <td>${user.practiced_branches}/${data.total_branches}</td>
+                                <td>${user.completed_branches}</td>
+                                <td>${user.mastered_branches}</td>
+                                <td><strong>${user.accuracy_rate}%</strong></td>
+                                <td><small>${user.last_practice_time ? formatDateTime(user.last_practice_time) : '-'}</small></td>
+                                <td>
+                                    <button class="btn btn-warning" onclick="adminResetUserProgress(${data.pgn_id}, ${user.user_id}, '${user.username}', '${data.pgn_filename}')" style="font-size: 0.7rem;">
+                                        彻底重置
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+
+            container.innerHTML = tableHTML;
+        }
+
+        // 管理员彻底重置用户进度
+        async function adminResetUserProgress(pgnId, userId, username, pgnFilename) {
+            if (!confirm(`⚠️ 危险操作确认\n\n确定要彻底重置用户 "${username}" 在PGN "${pgnFilename}" 上的所有学习进度吗？\n\n此操作将：\n• 删除该用户的所有分支进度（包括已掌握的）\n• 删除所有相关的学习日志\n• 无法恢复任何数据\n\n此操作不可撤销！`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/pgn/${pgnId}/users/${userId}/reset`, {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    showPGNUsersAlert(result.message || '用户进度重置成功', 'success');
+                    // 重新加载用户进度数据
+                    setTimeout(() => {
+                        viewPGNUsers(pgnId, pgnFilename);
+                    }, 1500);
+                } else {
+                    showPGNUsersAlert(result.error || '重置失败', 'danger');
+                }
+            } catch (error) {
+                showPGNUsersAlert('网络错误: ' + error.message, 'danger');
+                console.error('重置用户进度失败:', error);
+            }
+        }
+
+        // 显示PGN用户相关提示信息
+        function showPGNUsersAlert(message, type = 'danger') {
+            document.getElementById('pgnUsersAlertContainer').innerHTML = `
+                <div class="alert alert-${type}">
+                    ${message}
+                </div>
+            `;
+            
+            // 5秒后自动清除
+            setTimeout(() => {
+                document.getElementById('pgnUsersAlertContainer').innerHTML = '';
+            }, 5000);
+        }
+
         // 点击模态框外部关闭
         window.addEventListener('click', function(event) {
-            const modal = document.getElementById('userModal');
-            if (event.target === modal) {
+            const userModal = document.getElementById('userModal');
+            const pgnModal = document.getElementById('pgnUploadModal');
+            const pgnUsersModal = document.getElementById('pgnUsersModal');
+            
+            if (event.target === userModal) {
                 closeUserModal();
+            }
+            if (event.target === pgnModal) {
+                closePGNUploadModal();
+            }
+            if (event.target === pgnUsersModal) {
+                closePGNUsersModal();
             }
         });
     </script>

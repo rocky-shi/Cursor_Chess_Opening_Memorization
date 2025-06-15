@@ -149,7 +149,7 @@ class ChessAPI {
         }
     }
 
-    async uploadPGN(file) {
+    async uploadPGN(file, forceOverwrite = false) {
         if (!this.isBackendAvailable) {
             throw new Error('后端服务不可用，无法上传PGN文件');
         }
@@ -158,11 +158,12 @@ class ChessAPI {
             console.log('开始上传PGN文件:', {
                 fileName: file.name,
                 fileSize: file.size,
-                fileType: file.type
+                fileType: file.type,
+                forceOverwrite: forceOverwrite
             });
 
             // 只使用后端API解析
-            const result = await this.parseWithBackend(file);
+            const result = await this.parseWithBackend(file, forceOverwrite);
             console.log('后端解析成功:', result);
             
             // 保存到本地存储
@@ -178,20 +179,41 @@ class ChessAPI {
         }
     }
 
-    async parseWithBackend(file) {
+    async parseWithBackend(file, forceOverwrite = false) {
         const formData = new FormData();
         formData.append('file', file);
+        if (forceOverwrite) {
+            formData.append('force_overwrite', 'true');
+        }
 
         const response = await fetch(`${this.baseURL}/parse-pgn`, {
             method: 'POST',
+            credentials: 'include',
             body: formData
         });
 
         if (!response.ok) {
+            if (response.status === 409) {
+                // 文件名冲突，让调用者处理
+                const conflictData = await response.json();
+                const error = new Error('文件名冲突');
+                error.conflict = true;
+                error.data = conflictData;
+                throw error;
+            }
             throw new Error(`HTTP error! status: ${response.status}`);
         }
 
         const data = await response.json();
+        
+        // 检查是否需要管理员确认覆盖
+        if (data.conflict) {
+            const error = new Error('需要管理员确认覆盖');
+            error.conflict = true;
+            error.data = data;
+            throw error;
+        }
+        
         return data;
     }
 

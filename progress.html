@@ -55,9 +55,27 @@
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 1400px;
             margin: 2rem auto;
             padding: 0 2rem;
+        }
+
+        .page-header {
+            text-align: center;
+            margin-bottom: 2rem;
+            padding: 2rem;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .page-header h2 {
+            color: #2c3e50;
+            margin-bottom: 0.5rem;
+        }
+
+        .page-header p {
+            color: #666;
         }
 
         .card {
@@ -65,77 +83,71 @@
             border-radius: 8px;
             box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
             margin-bottom: 2rem;
+            overflow: hidden;
         }
 
         .card-header {
-            padding: 1.5rem 2rem 1rem;
+            padding: 1.5rem 2rem;
             border-bottom: 1px solid #eee;
+            background: #f8f9fa;
         }
 
-        .card-header h2 {
+        .card-header h3 {
             color: #2c3e50;
             font-size: 1.25rem;
+            margin: 0;
         }
 
         .card-body {
-            padding: 2rem;
+            padding: 0;
         }
 
-        .stats-overview {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 2rem;
-        }
-
-        .stat-item {
-            text-align: center;
-            padding: 1.5rem;
-            border-radius: 8px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
-
-        .stat-number {
-            font-size: 2.5rem;
-            font-weight: bold;
-            margin-bottom: 0.5rem;
-        }
-
-        .stat-label {
-            font-size: 0.9rem;
-            opacity: 0.9;
-        }
-
-        .progress-table {
+        /* PGN统计表格样式 */
+        .pgn-stats-table {
             width: 100%;
             border-collapse: collapse;
-            margin-top: 1rem;
+            font-size: 0.9rem;
         }
 
-        .progress-table th,
-        .progress-table td {
-            padding: 0.75rem;
+        .pgn-stats-table th,
+        .pgn-stats-table td {
+            padding: 0.75rem 0.5rem;
             text-align: left;
             border-bottom: 1px solid #eee;
+            vertical-align: middle;
         }
 
-        .progress-table th {
+        .pgn-stats-table th {
             background: #f8f9fa;
             font-weight: 600;
             color: #495057;
+            position: sticky;
+            top: 0;
+            font-size: 0.85rem;
         }
 
-        .progress-table tbody tr:hover {
+        .pgn-stats-table tbody tr {
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .pgn-stats-table tbody tr:hover {
             background: #f8f9fa;
         }
 
-        .progress-bar-container {
+        .pgn-stats-table tbody tr.expanded {
+            background: #e3f2fd;
+        }
+
+        /* 进度条样式 */
+        .progress-container {
             width: 100%;
-            height: 20px;
+            max-width: 90px;
+            height: 18px;
             background: #e9ecef;
-            border-radius: 10px;
+            border-radius: 9px;
             overflow: hidden;
+            display: inline-block;
         }
 
         .progress-bar {
@@ -144,43 +156,169 @@
             transition: width 0.3s ease;
         }
 
-        .badge {
-            padding: 0.25rem 0.5rem;
+        .progress-text {
+            font-size: 0.8rem;
+            font-weight: 600;
+            margin-left: 0.4rem;
+            color: #495057;
+        }
+
+        /* 状态徽章 */
+        .status-badge {
+            padding: 0.25rem 0.75rem;
             border-radius: 12px;
             font-size: 0.75rem;
             font-weight: 600;
+            text-align: center;
+            min-width: 60px;
+            display: inline-block;
         }
 
-        .badge-completed {
+        .status-completed {
             background: #d4edda;
             color: #155724;
         }
 
-        .badge-learning {
+        .status-learning {
             background: #fff3cd;
             color: #856404;
         }
 
-        .badge-beginner {
+        .status-beginner {
             background: #f8d7da;
             color: #721c24;
         }
 
-        .mastery-level {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
+        .status-not-started {
+            background: #e2e3e5;
+            color: #383d41;
         }
 
-        .mastery-text {
+        /* 展开/折叠图标 */
+        .expand-icon {
+            font-size: 1.2rem;
+            margin-right: 0.5rem;
+            transition: transform 0.3s;
+            cursor: pointer;
+            color: #007bff;
+        }
+
+        .expand-icon.expanded {
+            transform: rotate(90deg);
+        }
+
+        /* 分支详情表格 */
+        .branch-details {
+            display: none;
+            background: #f8f9fa;
+            border-top: 2px solid #007bff;
+        }
+
+        .branch-details.show {
+            display: table-row;
+        }
+
+        .branch-details td {
+            padding: 0 !important;
+        }
+
+        .branch-table {
+            width: 100%;
+            margin: 1rem 0;
+            border-collapse: collapse;
+        }
+
+        .branch-table th,
+        .branch-table td {
+            padding: 0.6rem 0.4rem;
+            text-align: left;
+            border-bottom: 1px solid #dee2e6;
+            vertical-align: middle;
+        }
+
+        .branch-table th {
+            background: #e9ecef;
             font-weight: 600;
-            min-width: 40px;
+            color: #495057;
+            font-size: 0.8rem;
         }
 
+        .branch-table td {
+            font-size: 0.8rem;
+        }
+
+        .branch-table tbody tr:hover {
+            background: white;
+        }
+
+        /* 操作按钮 */
+        .action-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            align-items: stretch;
+            min-width: 120px;
+        }
+
+        .btn {
+            padding: 0.4rem 0.8rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-block;
+            text-align: center;
+            white-space: nowrap;
+            line-height: 1.2;
+        }
+
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #0056b3;
+        }
+
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+
+        .btn-danger:hover {
+            background: #c82333;
+        }
+
+        .btn-warning {
+            background: #ffc107;
+            color: #212529;
+        }
+
+        .btn-warning:hover {
+            background: #e0a800;
+        }
+
+        .btn-sm {
+            padding: 0.3rem 0.6rem;
+            font-size: 0.75rem;
+            min-width: 70px;
+        }
+
+        /* 加载和空状态 */
         .loading {
             text-align: center;
-            padding: 2rem;
+            padding: 3rem;
             color: #666;
+        }
+
+        .loading::before {
+            content: "⏳";
+            font-size: 2rem;
+            display: block;
+            margin-bottom: 1rem;
         }
 
         .empty-state {
@@ -189,59 +327,84 @@
             color: #666;
         }
 
+        .empty-state::before {
+            content: "📚";
+            font-size: 3rem;
+            display: block;
+            margin-bottom: 1rem;
+        }
+
         .empty-state h3 {
             margin-bottom: 1rem;
             color: #495057;
         }
 
-        .btn {
-            padding: 0.5rem 1rem;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 0.9rem;
-            transition: all 0.3s;
-            text-decoration: none;
-            display: inline-block;
+        /* 模态框样式 */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
         }
 
-        .btn-primary {
-            background: #3498db;
-            color: white;
-        }
-
-        .btn-primary:hover {
-            background: #2980b9;
-        }
-
-        .alert {
-            padding: 0.75rem 1rem;
-            margin-bottom: 1rem;
-            border-radius: 4px;
-        }
-
-        .alert-info {
-            background: #d1ecf1;
-            color: #0c5460;
-            border: 1px solid #bee5eb;
-        }
-
-        .chart-container {
-            height: 300px;
-            margin-top: 1rem;
-        }
-
-        .no-data {
+        .modal.show {
             display: flex;
             align-items: center;
             justify-content: center;
-            height: 200px;
-            color: #666;
-            font-style: italic;
         }
 
-        /* 移动端优化 */
+        .modal-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            margin-bottom: 1rem;
+        }
+
+        .modal-header h4 {
+            color: #2c3e50;
+            margin: 0;
+        }
+
+        .modal-body {
+            margin-bottom: 2rem;
+        }
+
+        .modal-footer {
+            display: flex;
+            gap: 1rem;
+            justify-content: flex-end;
+        }
+
+        /* 统计数字样式 */
+        .stat-number {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        .stat-label {
+            font-size: 0.75rem;
+            color: #666;
+            margin-top: 0.25rem;
+        }
+
+        /* 响应式设计 */
         @media (max-width: 768px) {
+            .container {
+                padding: 0 1rem;
+            }
+
             .header {
                 padding: 1rem;
                 flex-direction: column;
@@ -249,137 +412,66 @@
                 align-items: flex-start;
             }
 
-            .header h1 {
-                font-size: 1.5rem;
-                margin: 0;
-            }
-
             .nav-links {
-                display: flex;
                 flex-wrap: wrap;
-                gap: 0.5rem;
-                font-size: 0.85rem;
-                width: 100%;
-                justify-content: space-between;
-                align-items: center;
             }
 
-            .nav-links a {
-                padding: 0.3rem 0.6rem;
-                text-decoration: none;
-                color: #3498db;
-                background: rgba(52, 152, 219, 0.1);
-                border-radius: 4px;
-                white-space: nowrap;
-            }
-
-            .container {
-                padding: 1rem;
-            }
-
-            .stats-grid {
-                grid-template-columns: 1fr 1fr;
-                gap: 0.75rem;
-            }
-
-            .stat-card {
-                padding: 1rem;
-            }
-
-            .stat-number {
-                font-size: 1.5rem;
-            }
-
-            .stat-label {
+            .pgn-stats-table {
                 font-size: 0.8rem;
             }
 
-            .card-header h2 {
-                font-size: 1.3rem;
+            .pgn-stats-table th,
+            .pgn-stats-table td {
+                padding: 0.4rem 0.3rem;
             }
 
-            .table-responsive {
-                font-size: 0.8rem;
+            .progress-container {
+                max-width: 70px;
             }
 
-            .table th,
-            .table td {
-                padding: 0.5rem 0.25rem;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                max-width: 120px;
-            }
-
-            .badge {
-                font-size: 0.65rem;
-                padding: 0.2rem 0.35rem;
-                display: inline-block;
-                text-align: center;
-                min-width: 40px;
-            }
-
-            .mastery-level {
+            .action-buttons {
                 flex-direction: column;
-                align-items: flex-start;
-                gap: 0.25rem;
-            }
-
-            .mastery-text {
-                font-size: 0.75rem;
-                min-width: auto;
-            }
-
-            .progress-bar {
-                height: 8px;
-                width: 100px;
+                gap: 0.2rem;
+                min-width: 90px;
             }
 
             .btn {
-                padding: 0.5rem 0.8rem;
-                font-size: 0.8rem;
+                font-size: 0.7rem;
+                padding: 0.3rem 0.6rem;
             }
 
-            .chart-container {
-                height: 250px;
+            .btn-sm {
+                min-width: 60px;
+                font-size: 0.65rem;
             }
         }
 
         @media (max-width: 480px) {
-            .stats-grid {
-                grid-template-columns: 1fr;
+            .modal-content {
+                padding: 1rem;
+                width: 95%;
             }
 
-            .nav-links {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 0.75rem;
+            .pgn-stats-table th,
+            .pgn-stats-table td {
+                padding: 0.3rem 0.2rem;
+                font-size: 0.7rem;
             }
 
-            .table-responsive {
-                font-size: 0.75rem;
+            .status-badge {
+                font-size: 0.65rem;
+                padding: 0.15rem 0.4rem;
+                min-width: 45px;
             }
 
-            .table th,
-            .table td {
-                padding: 0.4rem 0.2rem;
-                max-width: 80px;
+            .action-buttons {
+                min-width: 80px;
             }
 
-            .card-header h2 {
-                font-size: 1.2rem;
-            }
-
-            .chart-container {
-                height: 200px;
-            }
-
-            .empty-state {
-                padding: 2rem 1rem;
-            }
-
-            .empty-state h3 {
-                font-size: 1.1rem;
+            .btn-sm {
+                min-width: 55px;
+                font-size: 0.6rem;
+                padding: 0.25rem 0.4rem;
             }
         }
     </style>
@@ -387,48 +479,47 @@
 <body>
     <div class="header">
         <h1>学习进度</h1>
-        <div class="nav-links">
-            <a href="/">主页</a>
-            <!--ADMIN_LINK_PLACEHOLDER-->
-            <span>欢迎，<span id="currentUsername">用户</span></span>
-            <a href="#" onclick="logout()">退出登录</a>
+        <div class="user-info">
+            <span>用户：<span id="currentUsername">加载中...</span></span>
+            <div class="nav-links">
+                <a href="/progress.html">学习进度</a>
+                <!--ADMIN_LINK_PLACEHOLDER-->
+                <a href="#" onclick="logout()">退出</a>
+            </div>
         </div>
     </div>
 
     <div class="container">
-        <!-- 学习统计概览 -->
+        <div class="page-header">
+            <h2>📊 我的学习进度</h2>
+            <p>查看您在各个PGN文件上的学习进度，支持详细分析和进度管理</p>
+        </div>
+
+        <!-- PGN统计总览 -->
         <div class="card">
             <div class="card-header">
-                <h2>学习统计概览</h2>
+                <h3>📂 PGN文件学习概览</h3>
             </div>
             <div class="card-body">
-                <div id="statsContainer">
-                    <div class="loading">正在加载统计数据...</div>
+                <div id="pgnStatsContainer">
+                    <div class="loading">正在加载PGN统计数据...</div>
                 </div>
             </div>
         </div>
+    </div>
 
-        <!-- 详细进度 -->
-        <div class="card">
-            <div class="card-header">
-                <h2>分支学习进度</h2>
+    <!-- 确认模态框 -->
+    <div id="confirmModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 id="modalTitle">确认操作</h4>
             </div>
-            <div class="card-body">
-                <div id="progressContainer">
-                    <div class="loading">正在加载进度数据...</div>
-                </div>
+            <div class="modal-body">
+                <p id="modalMessage">确定要执行此操作吗？</p>
             </div>
-        </div>
-
-        <!-- 最近学习活动 -->
-        <div class="card">
-            <div class="card-header">
-                <h2>最近30天学习活动</h2>
-            </div>
-            <div class="card-body">
-                <div id="activityContainer">
-                    <div class="loading">正在加载活动数据...</div>
-                </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="closeModal()">取消</button>
+                <button class="btn btn-danger" id="confirmBtn" onclick="confirmAction()">确认</button>
             </div>
         </div>
     </div>
@@ -454,6 +545,7 @@
         const API_BASE = getApiBase();
         console.log('进度页面 API_BASE:', API_BASE);
         let currentUser = null;
+        let currentAction = null;
 
         // 页面初始化
         document.addEventListener('DOMContentLoaded', function() {
@@ -487,140 +579,149 @@
                     document.querySelector('.nav-links').innerHTML = document.querySelector('.nav-links').innerHTML.replace('<!--ADMIN_LINK_PLACEHOLDER-->', adminLink);
                 }
                 
-                // 初始化页面数据
-                await loadStats();
-                await loadProgress();
+                // 加载PGN统计数据
+                await loadPGNStats();
             } catch (error) {
                 console.error('认证检查失败:', error);
                 window.location.href = '/login.html';
             }
         }
 
-        // 加载统计信息
-        async function loadStats() {
+        // 加载PGN统计数据
+        async function loadPGNStats() {
             try {
-                const response = await fetch(`${API_BASE}/progress/stats`, {
+                const response = await fetch(`${API_BASE}/progress/by-pgn`, {
                     credentials: 'include'
                 });
 
                 if (!response.ok) {
-                    throw new Error('获取统计信息失败');
+                    throw new Error('获取PGN统计失败');
                 }
 
                 const result = await response.json();
                 if (!result.success) {
-                    throw new Error('获取统计信息失败');
+                    throw new Error('获取PGN统计失败');
                 }
 
-                renderStats(result.stats, result.daily_stats);
+                if (result.pgn_progress && result.pgn_progress.length > 0) {
+                    renderPGNStats(result.pgn_progress);
+                } else {
+                    // 没有学习记录，显示可用的PGN列表
+                    await loadAvailablePGNs();
+                }
             } catch (error) {
-                console.error('加载统计信息失败:', error);
-                document.getElementById('statsContainer').innerHTML = `
-                    <div class="alert alert-info">
-                        <strong>提示：</strong>您还没有开始学习任何分支。前往主页上传PGN文件并开始练习吧！
-                    </div>
-                `;
+                console.error('加载PGN统计失败:', error);
+                // 尝试加载可用的PGN列表
+                await loadAvailablePGNs();
             }
         }
 
-        // 渲染统计信息
-        function renderStats(stats, dailyStats) {
-            const statsHTML = `
-                <div class="stats-overview">
-                    <div class="stat-item">
-                        <div class="stat-number">${stats.total_branches}</div>
-                        <div class="stat-label">练习分支数</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-number">${stats.completed_branches}</div>
-                        <div class="stat-label">已掌握分支</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-number">${stats.completion_rate}%</div>
-                        <div class="stat-label">完成率</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-number">${stats.accuracy_rate}%</div>
-                        <div class="stat-label">正确率</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-number">${stats.total_attempts}</div>
-                        <div class="stat-label">总练习次数</div>
-                    </div>
-                    <div class="stat-item">
-                        <div class="stat-number">${stats.avg_mastery}%</div>
-                        <div class="stat-label">平均掌握度</div>
-                    </div>
-                </div>
-            `;
-
-            document.getElementById('statsContainer').innerHTML = statsHTML;
-            
-            // 渲染活动图表
-            renderActivityChart(dailyStats);
-        }
-
-        // 渲染活动图表
-        function renderActivityChart(dailyStats) {
-            const container = document.getElementById('activityContainer');
-            
-            if (!dailyStats || dailyStats.length === 0) {
-                container.innerHTML = '<div class="no-data">最近30天内没有学习活动</div>';
-                return;
-            }
-
-            // 简单的文本形式显示最近活动
-            const activityHTML = `
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.5rem;">
-                    ${dailyStats.slice(0, 10).map(day => `
-                        <div style="text-align: center; padding: 0.5rem; background: #f8f9fa; border-radius: 4px;">
-                            <div style="font-size: 0.8rem; color: #666;">${day.date}</div>
-                            <div style="font-weight: bold; color: #2c3e50;">${day.count}次</div>
-                        </div>
-                    `).join('')}
-                </div>
-                <p style="margin-top: 1rem; color: #666; font-size: 0.9rem;">
-                    显示最近10天的学习活动次数
-                </p>
-            `;
-
-            container.innerHTML = activityHTML;
-        }
-
-        // 加载学习进度
-        async function loadProgress() {
+        // 加载可用的PGN列表（用户还没有学习记录时）
+        async function loadAvailablePGNs() {
             try {
-                const response = await fetch(`${API_BASE}/progress/my`, {
+                const response = await fetch(`${API_BASE}/pgn-list?limit=50`, {
                     credentials: 'include'
                 });
 
                 if (!response.ok) {
-                    throw new Error('获取进度信息失败');
+                    throw new Error('获取PGN列表失败');
                 }
 
                 const result = await response.json();
                 if (!result.success) {
-                    throw new Error('获取进度信息失败');
+                    throw new Error('获取PGN列表失败');
                 }
 
-                renderProgress(result.progress);
+                if (result.data && result.data.length > 0) {
+                    renderAvailablePGNs(result.data);
+                } else {
+                    showNoPGNsMessage();
+                }
             } catch (error) {
-                console.error('加载进度失败:', error);
-                document.getElementById('progressContainer').innerHTML = `
-                    <div class="empty-state">
-                        <h3>还没有学习记录</h3>
-                        <p>开始练习后，您的进度将显示在这里</p>
-                        <a href="/" class="btn btn-primary">开始练习</a>
-                    </div>
-                `;
+                console.error('加载可用PGN失败:', error);
+                showNoPGNsMessage();
             }
         }
 
-        // 渲染进度表格
-        function renderProgress(progressList) {
-            const container = document.getElementById('progressContainer');
+        // 渲染可用的PGN列表
+        function renderAvailablePGNs(pgnList) {
+            const container = document.getElementById('pgnStatsContainer');
             
-            if (!progressList || progressList.length === 0) {
+            const tableHTML = `
+                <div style="margin-bottom: 1rem; padding: 1rem; background: #e3f2fd; border-radius: 8px;">
+                    <h4 style="margin: 0 0 0.5rem 0; color: #1565c0;">📚 选择PGN开始学习</h4>
+                    <p style="margin: 0; color: #666; font-size: 0.9rem;">选择一个PGN文件开始您的国际象棋开局学习之旅</p>
+                </div>
+                <table class="pgn-stats-table">
+                    <thead>
+                        <tr>
+                            <th width="30%">PGN文件名</th>
+                            <th width="12%">总分支数</th>
+                            <th width="12%">游戏数</th>
+                            <th width="15%">上传时间</th>
+                            <th width="12%">文件大小</th>
+                            <th width="19%">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${pgnList.map(pgn => `
+                            <tr>
+                                <td>
+                                    <strong>${pgn.filename}</strong>
+                                </td>
+                                <td>
+                                    <span class="badge status-learning">${pgn.total_branches}</span>
+                                </td>
+                                <td>
+                                    <span class="badge status-beginner">${pgn.total_games}</span>
+                                </td>
+                                <td>
+                                    <small>${formatDateTime(pgn.upload_time)}</small>
+                                </td>
+                                <td>
+                                    <small>${formatFileSize(pgn.file_size)}</small>
+                                </td>
+                                <td>
+                                    <button class="btn btn-primary btn-sm" onclick="startLearning(${pgn.id})" style="width: 100%;">
+                                        开始学习
+                                    </button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+
+            container.innerHTML = tableHTML;
+        }
+
+        // 显示没有PGN的消息
+        function showNoPGNsMessage() {
+            document.getElementById('pgnStatsContainer').innerHTML = `
+                <div class="empty-state">
+                    <h3>暂无可用的PGN文件</h3>
+                    <p>请联系管理员上传PGN文件，或者您可以联系管理员获取帮助</p>
+                    ${currentUser && currentUser.role === 'admin' ? '<a href="/admin.html" class="btn btn-primary">管理员面板</a>' : ''}
+                </div>
+            `;
+        }
+
+        // 格式化文件大小
+        function formatFileSize(bytes) {
+            if (!bytes || bytes === 0) return '0 B';
+            
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // 渲染PGN统计表格
+        function renderPGNStats(pgnProgress) {
+            const container = document.getElementById('pgnStatsContainer');
+            
+            if (!pgnProgress || pgnProgress.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
                         <h3>还没有学习记录</h3>
@@ -632,62 +733,271 @@
             }
 
             const tableHTML = `
-                <table class="progress-table">
+                <table class="pgn-stats-table">
                     <thead>
                         <tr>
-                            <th>PGN文件</th>
-                            <th>分支ID</th>
-                            <th>掌握度</th>
-                            <th>状态</th>
-                            <th>正确次数</th>
-                            <th>总尝试</th>
-                            <th>正确率</th>
-                            <th>最后练习</th>
-                            <th>备注</th>
+                            <th width="3%"></th>
+                            <th width="22%">PGN文件名</th>
+                            <th width="9%">总分支数</th>
+                            <th width="11%">掌握度</th>
+                            <th width="8%">状态</th>
+                            <th width="8%">正确次数</th>
+                            <th width="8%">总尝试</th>
+                            <th width="8%">正确率</th>
+                            <th width="13%">最后练习</th>
+                            <th width="10%">操作</th>
                         </tr>
                     </thead>
                     <tbody>
-                        ${progressList.map(item => {
-                            const accuracy = item.total_attempts > 0 ? Math.round((item.correct_count / item.total_attempts) * 100) : 0;
-                            let statusBadge, statusText;
-                            
-                            if (item.is_completed) {
-                                statusBadge = 'badge-completed';
-                                statusText = '已掌握';
-                            } else if (item.mastery_level >= 50) {
-                                statusBadge = 'badge-learning';
-                                statusText = '学习中';
-                            } else {
-                                statusBadge = 'badge-beginner';
-                                statusText = '初学';
-                            }
-
-                            return `
-                                <tr>
-                                    <td>${item.pgn_filename}</td>
-                                    <td>${item.branch_id}</td>
-                                    <td>
-                                        <div class="mastery-level">
-                                            <span class="mastery-text">${item.mastery_level}%</span>
-                                            <div class="progress-bar-container">
-                                                <div class="progress-bar" style="width: ${item.mastery_level}%"></div>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td><span class="badge ${statusBadge}">${statusText}</span></td>
-                                    <td>${item.correct_count}</td>
-                                    <td>${item.total_attempts}</td>
-                                    <td>${accuracy}%</td>
-                                    <td>${item.last_attempt_at ? formatDateTime(item.last_attempt_at) : '-'}</td>
-                                    <td>${item.notes || '-'}</td>
-                                </tr>
-                            `;
-                        }).join('')}
+                        ${pgnProgress.map(pgn => renderPGNRow(pgn)).join('')}
                     </tbody>
                 </table>
             `;
 
             container.innerHTML = tableHTML;
+        }
+
+        // 渲染单个PGN行
+        function renderPGNRow(pgn) {
+            const lastPracticeTime = pgn.last_practice_time ? formatDateTime(pgn.last_practice_time) : '-';
+            
+            return `
+                <tr id="pgn-${pgn.pgn_id}" onclick="toggleBranchDetails(${pgn.pgn_id})">
+                    <td>
+                        <span class="expand-icon" id="icon-${pgn.pgn_id}">▶</span>
+                    </td>
+                    <td>
+                        <strong>${pgn.filename}</strong>
+                    </td>
+                    <td>
+                        <div class="stat-number">${pgn.total_branches}</div>
+                        <div class="stat-label">已练习${pgn.practiced_branches}</div>
+                    </td>
+                    <td>
+                        <div class="progress-container">
+                            <div class="progress-bar" style="width: ${pgn.mastery_rate || pgn.avg_mastery}%"></div>
+                        </div>
+                        <span class="progress-text">${pgn.mastery_rate || pgn.avg_mastery}%</span>
+                        <div class="stat-label">已掌握${pgn.mastered_branches || 0}</div>
+                    </td>
+                    <td>
+                        <span class="status-badge status-${pgn.status_class}">${pgn.status}</span>
+                    </td>
+                    <td>
+                        <div class="stat-number">${pgn.total_correct}</div>
+                    </td>
+                    <td>
+                        <div class="stat-number">${pgn.total_attempts}</div>
+                    </td>
+                    <td>
+                        <strong>${pgn.accuracy_rate}%</strong>
+                    </td>
+                    <td>
+                        <small>${lastPracticeTime}</small>
+                    </td>
+                    <td onclick="event.stopPropagation()">
+                        <div class="action-buttons">
+                            <button class="btn btn-primary btn-sm" onclick="startLearning(${pgn.pgn_id})">
+                                开始学习
+                            </button>
+                            <button class="btn btn-warning btn-sm" onclick="resetPGNProgress(${pgn.pgn_id}, '${pgn.filename}')">
+                                重置进度
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                <tr id="branches-${pgn.pgn_id}" class="branch-details">
+                    <td colspan="10">
+                        <div id="branch-content-${pgn.pgn_id}">
+                            <div class="loading">正在加载分支详情...</div>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }
+
+        // 切换分支详情显示
+        async function toggleBranchDetails(pgnId) {
+            const row = document.getElementById(`branches-${pgnId}`);
+            const icon = document.getElementById(`icon-${pgnId}`);
+            const mainRow = document.getElementById(`pgn-${pgnId}`);
+            
+            if (row.classList.contains('show')) {
+                // 折叠
+                row.classList.remove('show');
+                icon.classList.remove('expanded');
+                mainRow.classList.remove('expanded');
+            } else {
+                // 展开
+                row.classList.add('show');
+                icon.classList.add('expanded');
+                mainRow.classList.add('expanded');
+                
+                // 加载分支详情
+                await loadBranchDetails(pgnId);
+            }
+        }
+
+        // 加载分支详情
+        async function loadBranchDetails(pgnId) {
+            const container = document.getElementById(`branch-content-${pgnId}`);
+            
+            try {
+                const response = await fetch(`${API_BASE}/progress/branches/${pgnId}`, {
+                    credentials: 'include'
+                });
+
+                if (!response.ok) {
+                    throw new Error('获取分支详情失败');
+                }
+
+                const result = await response.json();
+                if (!result.success) {
+                    throw new Error('获取分支详情失败');
+                }
+
+                renderBranchDetails(container, result.branches, result.pgn_filename);
+            } catch (error) {
+                console.error('加载分支详情失败:', error);
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 2rem; color: #dc3545;">
+                        加载分支详情失败: ${error.message}
+                    </div>
+                `;
+            }
+        }
+
+        // 渲染分支详情表格
+        function renderBranchDetails(container, branches, pgnFilename) {
+            if (!branches || branches.length === 0) {
+                container.innerHTML = `
+                    <div style="text-align: center; padding: 2rem; color: #666;">
+                        该PGN文件没有练习记录
+                    </div>
+                `;
+                return;
+            }
+
+            const tableHTML = `
+                <div style="padding: 1rem;">
+                    <h4 style="margin-bottom: 1rem; color: #2c3e50;">
+                        📋 ${pgnFilename} - 分支详情 (${branches.length} 个分支)
+                    </h4>
+                    <table class="branch-table">
+                        <thead>
+                            <tr>
+                                <th>分支ID</th>
+                                <th>状态</th>
+                                <th>掌握度</th>
+                                <th>正确次数</th>
+                                <th>总尝试</th>
+                                <th>正确率</th>
+                                <th>最后练习</th>
+                                <th>备注</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${branches.map(branch => `
+                                <tr>
+                                    <td><code>${branch.branch_id}</code></td>
+                                    <td>
+                                        <span class="status-badge status-${branch.status_class}">${branch.status}</span>
+                                    </td>
+                                    <td>
+                                        <div class="progress-container" style="max-width: 80px;">
+                                            <div class="progress-bar" style="width: ${branch.mastery_level}%"></div>
+                                        </div>
+                                        <span class="progress-text">${branch.mastery_level}%</span>
+                                    </td>
+                                    <td>${branch.correct_count}</td>
+                                    <td>${branch.total_attempts}</td>
+                                    <td><strong>${branch.accuracy_rate}%</strong></td>
+                                    <td><small>${branch.last_attempt_at ? formatDateTime(branch.last_attempt_at) : '-'}</small></td>
+                                    <td>${branch.notes || '-'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            container.innerHTML = tableHTML;
+        }
+
+        // 开始学习
+        function startLearning(pgnId) {
+            // 跳转到学习页面，传递PGN ID参数
+            window.location.href = `/?pgn_id=${pgnId}`;
+        }
+
+        // 重置PGN进度
+        function resetPGNProgress(pgnId, filename) {
+            currentAction = {
+                type: 'reset',
+                pgnId: pgnId,
+                filename: filename
+            };
+            
+            showModal(
+                '重置学习进度',
+                `确定要重置 "${filename}" 的所有学习进度吗？\n\n⚠️ 此操作将清除您在该PGN上的所有练习记录，包括正确次数、尝试次数和掌握度等数据。此操作不可撤销！`,
+                '重置进度'
+            );
+        }
+
+        // 显示模态框
+        function showModal(title, message, confirmText = '确认') {
+            document.getElementById('modalTitle').textContent = title;
+            document.getElementById('modalMessage').textContent = message;
+            document.getElementById('confirmBtn').textContent = confirmText;
+            document.getElementById('confirmModal').classList.add('show');
+        }
+
+        // 关闭模态框
+        function closeModal() {
+            document.getElementById('confirmModal').classList.remove('show');
+            currentAction = null;
+        }
+
+        // 确认操作
+        async function confirmAction() {
+            if (!currentAction) return;
+            
+            try {
+                if (currentAction.type === 'reset') {
+                    await executeResetProgress(currentAction.pgnId);
+                }
+            } catch (error) {
+                console.error('操作失败:', error);
+                alert('操作失败: ' + error.message);
+            } finally {
+                closeModal();
+            }
+        }
+
+        // 执行重置进度
+        async function executeResetProgress(pgnId) {
+            const response = await fetch(`${API_BASE}/progress/reset`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'include',
+                body: JSON.stringify({ pgn_game_id: pgnId })
+            });
+
+            if (!response.ok) {
+                throw new Error('重置失败');
+            }
+
+            const result = await response.json();
+            if (!result.success) {
+                throw new Error(result.error || '重置失败');
+            }
+
+            alert('进度重置成功！');
+            // 重新加载数据
+            await loadPGNStats();
         }
 
         // 登出
@@ -709,6 +1019,13 @@
             const date = new Date(dateString);
             return date.toLocaleString('zh-CN');
         }
+
+        // 点击模态框外部关闭
+        document.getElementById('confirmModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal();
+            }
+        });
     </script>
 </body>
 </html> 
