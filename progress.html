@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>学习进度 - 国际象棋开局记忆系统</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            background: #f5f5f5;
+            min-height: 100vh;
+        }
+
+        .header {
+            background: #2c3e50;
+            color: white;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            font-size: 1.5rem;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            font-size: 0.9rem;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .nav-links a {
+            color: white;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            transition: background 0.3s;
+        }
+
+        .nav-links a:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 2rem;
+        }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 2rem;
+        }
+
+        .card-header {
+            padding: 1.5rem 2rem 1rem;
+            border-bottom: 1px solid #eee;
+        }
+
+        .card-header h2 {
+            color: #2c3e50;
+            font-size: 1.25rem;
+        }
+
+        .card-body {
+            padding: 2rem;
+        }
+
+        .stats-overview {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 1.5rem;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .stat-number {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .progress-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 1rem;
+        }
+
+        .progress-table th,
+        .progress-table td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        .progress-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #495057;
+        }
+
+        .progress-table tbody tr:hover {
+            background: #f8f9fa;
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            height: 20px;
+            background: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #28a745, #20c997);
+            transition: width 0.3s ease;
+        }
+
+        .badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .badge-completed {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .badge-learning {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .badge-beginner {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .mastery-level {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .mastery-text {
+            font-weight: 600;
+            min-width: 40px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: #666;
+        }
+
+        .empty-state h3 {
+            margin-bottom: 1rem;
+            color: #495057;
+        }
+
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .btn-primary {
+            background: #3498db;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #2980b9;
+        }
+
+        .alert {
+            padding: 0.75rem 1rem;
+            margin-bottom: 1rem;
+            border-radius: 4px;
+        }
+
+        .alert-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+
+        .chart-container {
+            height: 300px;
+            margin-top: 1rem;
+        }
+
+        .no-data {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 200px;
+            color: #666;
+            font-style: italic;
+        }
+
+        /* 移动端优化 */
+        @media (max-width: 768px) {
+            .header {
+                padding: 1rem;
+                flex-direction: column;
+                gap: 1rem;
+                align-items: flex-start;
+            }
+
+            .header h1 {
+                font-size: 1.5rem;
+                margin: 0;
+            }
+
+            .nav-links {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 0.5rem;
+                font-size: 0.85rem;
+                width: 100%;
+                justify-content: space-between;
+                align-items: center;
+            }
+
+            .nav-links a {
+                padding: 0.3rem 0.6rem;
+                text-decoration: none;
+                color: #3498db;
+                background: rgba(52, 152, 219, 0.1);
+                border-radius: 4px;
+                white-space: nowrap;
+            }
+
+            .container {
+                padding: 1rem;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr 1fr;
+                gap: 0.75rem;
+            }
+
+            .stat-card {
+                padding: 1rem;
+            }
+
+            .stat-number {
+                font-size: 1.5rem;
+            }
+
+            .stat-label {
+                font-size: 0.8rem;
+            }
+
+            .card-header h2 {
+                font-size: 1.3rem;
+            }
+
+            .table-responsive {
+                font-size: 0.8rem;
+            }
+
+            .table th,
+            .table td {
+                padding: 0.5rem 0.25rem;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                max-width: 120px;
+            }
+
+            .badge {
+                font-size: 0.65rem;
+                padding: 0.2rem 0.35rem;
+                display: inline-block;
+                text-align: center;
+                min-width: 40px;
+            }
+
+            .mastery-level {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.25rem;
+            }
+
+            .mastery-text {
+                font-size: 0.75rem;
+                min-width: auto;
+            }
+
+            .progress-bar {
+                height: 8px;
+                width: 100px;
+            }
+
+            .btn {
+                padding: 0.5rem 0.8rem;
+                font-size: 0.8rem;
+            }
+
+            .chart-container {
+                height: 250px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .nav-links {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.75rem;
+            }
+
+            .table-responsive {
+                font-size: 0.75rem;
+            }
+
+            .table th,
+            .table td {
+                padding: 0.4rem 0.2rem;
+                max-width: 80px;
+            }
+
+            .card-header h2 {
+                font-size: 1.2rem;
+            }
+
+            .chart-container {
+                height: 200px;
+            }
+
+            .empty-state {
+                padding: 2rem 1rem;
+            }
+
+            .empty-state h3 {
+                font-size: 1.1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>学习进度</h1>
+        <div class="nav-links">
+            <a href="/">主页</a>
+            <!--ADMIN_LINK_PLACEHOLDER-->
+            <span>欢迎，<span id="currentUsername">用户</span></span>
+            <a href="#" onclick="logout()">退出登录</a>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- 学习统计概览 -->
+        <div class="card">
+            <div class="card-header">
+                <h2>学习统计概览</h2>
+            </div>
+            <div class="card-body">
+                <div id="statsContainer">
+                    <div class="loading">正在加载统计数据...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 详细进度 -->
+        <div class="card">
+            <div class="card-header">
+                <h2>分支学习进度</h2>
+            </div>
+            <div class="card-body">
+                <div id="progressContainer">
+                    <div class="loading">正在加载进度数据...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 最近学习活动 -->
+        <div class="card">
+            <div class="card-header">
+                <h2>最近30天学习活动</h2>
+            </div>
+            <div class="card-body">
+                <div id="activityContainer">
+                    <div class="loading">正在加载活动数据...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 动态获取API基础地址
+        function getApiBase() {
+            const currentProtocol = window.location.protocol;
+            const currentHost = window.location.hostname;
+            const currentPort = window.location.port;
+            
+            if (currentProtocol === 'file:') {
+                return 'http://localhost:5000/api';
+            } else {
+                let portStr = '';
+                if (currentPort && currentPort !== '80' && currentPort !== '443') {
+                    portStr = `:${currentPort}`;
+                }
+                return `${currentProtocol}//${currentHost}${portStr}/api`;
+            }
+        }
+        
+        const API_BASE = getApiBase();
+        console.log('进度页面 API_BASE:', API_BASE);
+        let currentUser = null;
+
+        // 页面初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            checkAuthAndInit();
+        });
+
+        // 检查认证状态并初始化
+        async function checkAuthAndInit() {
+            try {
+                const response = await fetch(`${API_BASE}/auth/me`, {
+                    credentials: 'include'
+                });
+
+                if (!response.ok) {
+                    window.location.href = '/login.html';
+                    return;
+                }
+
+                const result = await response.json();
+                if (!result.success) {
+                    window.location.href = '/login.html';
+                    return;
+                }
+
+                currentUser = result.user;
+                document.getElementById('currentUsername').textContent = currentUser.username;
+                
+                // 如果是管理员，显示管理员链接
+                if (currentUser.role === 'admin') {
+                    const adminLink = '<a href="/admin.html">管理员面板</a>';
+                    document.querySelector('.nav-links').innerHTML = document.querySelector('.nav-links').innerHTML.replace('<!--ADMIN_LINK_PLACEHOLDER-->', adminLink);
+                }
+                
+                // 初始化页面数据
+                await loadStats();
+                await loadProgress();
+            } catch (error) {
+                console.error('认证检查失败:', error);
+                window.location.href = '/login.html';
+            }
+        }
+
+        // 加载统计信息
+        async function loadStats() {
+            try {
+                const response = await fetch(`${API_BASE}/progress/stats`, {
+                    credentials: 'include'
+                });
+
+                if (!response.ok) {
+                    throw new Error('获取统计信息失败');
+                }
+
+                const result = await response.json();
+                if (!result.success) {
+                    throw new Error('获取统计信息失败');
+                }
+
+                renderStats(result.stats, result.daily_stats);
+            } catch (error) {
+                console.error('加载统计信息失败:', error);
+                document.getElementById('statsContainer').innerHTML = `
+                    <div class="alert alert-info">
+                        <strong>提示：</strong>您还没有开始学习任何分支。前往主页上传PGN文件并开始练习吧！
+                    </div>
+                `;
+            }
+        }
+
+        // 渲染统计信息
+        function renderStats(stats, dailyStats) {
+            const statsHTML = `
+                <div class="stats-overview">
+                    <div class="stat-item">
+                        <div class="stat-number">${stats.total_branches}</div>
+                        <div class="stat-label">练习分支数</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-number">${stats.completed_branches}</div>
+                        <div class="stat-label">已掌握分支</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-number">${stats.completion_rate}%</div>
+                        <div class="stat-label">完成率</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-number">${stats.accuracy_rate}%</div>
+                        <div class="stat-label">正确率</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-number">${stats.total_attempts}</div>
+                        <div class="stat-label">总练习次数</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-number">${stats.avg_mastery}%</div>
+                        <div class="stat-label">平均掌握度</div>
+                    </div>
+                </div>
+            `;
+
+            document.getElementById('statsContainer').innerHTML = statsHTML;
+            
+            // 渲染活动图表
+            renderActivityChart(dailyStats);
+        }
+
+        // 渲染活动图表
+        function renderActivityChart(dailyStats) {
+            const container = document.getElementById('activityContainer');
+            
+            if (!dailyStats || dailyStats.length === 0) {
+                container.innerHTML = '<div class="no-data">最近30天内没有学习活动</div>';
+                return;
+            }
+
+            // 简单的文本形式显示最近活动
+            const activityHTML = `
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 0.5rem;">
+                    ${dailyStats.slice(0, 10).map(day => `
+                        <div style="text-align: center; padding: 0.5rem; background: #f8f9fa; border-radius: 4px;">
+                            <div style="font-size: 0.8rem; color: #666;">${day.date}</div>
+                            <div style="font-weight: bold; color: #2c3e50;">${day.count}次</div>
+                        </div>
+                    `).join('')}
+                </div>
+                <p style="margin-top: 1rem; color: #666; font-size: 0.9rem;">
+                    显示最近10天的学习活动次数
+                </p>
+            `;
+
+            container.innerHTML = activityHTML;
+        }
+
+        // 加载学习进度
+        async function loadProgress() {
+            try {
+                const response = await fetch(`${API_BASE}/progress/my`, {
+                    credentials: 'include'
+                });
+
+                if (!response.ok) {
+                    throw new Error('获取进度信息失败');
+                }
+
+                const result = await response.json();
+                if (!result.success) {
+                    throw new Error('获取进度信息失败');
+                }
+
+                renderProgress(result.progress);
+            } catch (error) {
+                console.error('加载进度失败:', error);
+                document.getElementById('progressContainer').innerHTML = `
+                    <div class="empty-state">
+                        <h3>还没有学习记录</h3>
+                        <p>开始练习后，您的进度将显示在这里</p>
+                        <a href="/" class="btn btn-primary">开始练习</a>
+                    </div>
+                `;
+            }
+        }
+
+        // 渲染进度表格
+        function renderProgress(progressList) {
+            const container = document.getElementById('progressContainer');
+            
+            if (!progressList || progressList.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <h3>还没有学习记录</h3>
+                        <p>开始练习后，您的进度将显示在这里</p>
+                        <a href="/" class="btn btn-primary">开始练习</a>
+                    </div>
+                `;
+                return;
+            }
+
+            const tableHTML = `
+                <table class="progress-table">
+                    <thead>
+                        <tr>
+                            <th>PGN文件</th>
+                            <th>分支ID</th>
+                            <th>掌握度</th>
+                            <th>状态</th>
+                            <th>正确次数</th>
+                            <th>总尝试</th>
+                            <th>正确率</th>
+                            <th>最后练习</th>
+                            <th>备注</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${progressList.map(item => {
+                            const accuracy = item.total_attempts > 0 ? Math.round((item.correct_count / item.total_attempts) * 100) : 0;
+                            let statusBadge, statusText;
+                            
+                            if (item.is_completed) {
+                                statusBadge = 'badge-completed';
+                                statusText = '已掌握';
+                            } else if (item.mastery_level >= 50) {
+                                statusBadge = 'badge-learning';
+                                statusText = '学习中';
+                            } else {
+                                statusBadge = 'badge-beginner';
+                                statusText = '初学';
+                            }
+
+                            return `
+                                <tr>
+                                    <td>${item.pgn_filename}</td>
+                                    <td>${item.branch_id}</td>
+                                    <td>
+                                        <div class="mastery-level">
+                                            <span class="mastery-text">${item.mastery_level}%</span>
+                                            <div class="progress-bar-container">
+                                                <div class="progress-bar" style="width: ${item.mastery_level}%"></div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td><span class="badge ${statusBadge}">${statusText}</span></td>
+                                    <td>${item.correct_count}</td>
+                                    <td>${item.total_attempts}</td>
+                                    <td>${accuracy}%</td>
+                                    <td>${item.last_attempt_at ? formatDateTime(item.last_attempt_at) : '-'}</td>
+                                    <td>${item.notes || '-'}</td>
+                                </tr>
+                            `;
+                        }).join('')}
+                    </tbody>
+                </table>
+            `;
+
+            container.innerHTML = tableHTML;
+        }
+
+        // 登出
+        async function logout() {
+            try {
+                await fetch(`${API_BASE}/auth/logout`, {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+            } catch (error) {
+                console.error('登出失败:', error);
+            }
+            window.location.href = '/login.html';
+        }
+
+        // 格式化日期时间
+        function formatDateTime(dateString) {
+            if (!dateString) return '-';
+            const date = new Date(dateString);
+            return date.toLocaleString('zh-CN');
+        }
+    </script>
+</body>
+</html> 

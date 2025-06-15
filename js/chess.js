@@ -185,6 +185,9 @@ class ChessBoard {
             this.totalMoves++;
             this.updateAccuracy();
             
+            // 记录错误移动到数据库
+            this.recordMoveProgress(false);
+            
             this.showError();
             return 'snapback';
         }
@@ -198,6 +201,9 @@ class ChessBoard {
         this.correctMoves++;
         this.totalMoves++;
         this.updateAccuracy();
+        
+        // 记录正确移动到数据库
+        this.recordMoveProgress(true);
 
         // 更新当前分支
         this.currentBranch = matchingBranch;
@@ -546,6 +552,9 @@ class ChessBoard {
         this.completedBranches.add(this.currentBranch.id);
         this.updateProgress();
         
+        // 记录到数据库
+        this.recordBranchProgress(true);
+        
         // 显示分支完成模态框
         this.showBranchCompletedModal();
         
@@ -578,7 +587,7 @@ class ChessBoard {
         }, 2000);
     }
 
-    startStudy() {
+    async startStudy() {
         // 检查是否有PGN数据
         if (!window.pgnParser || !window.pgnParser.branches || window.pgnParser.branches.length === 0) {
             const message = '请先加载PGN文件！';
@@ -589,6 +598,9 @@ class ChessBoard {
         }
 
         this.isStudyMode = true;
+        
+        // 加载用户进度
+        await this.loadUserProgress();
         
         // 重置正确率统计
         this.correctMoves = 0;
@@ -1264,5 +1276,102 @@ class ChessBoard {
 
         console.log(`创建覆盖层: ${square} at (${x}, ${y})`);
         return overlay;
+    }
+
+    // 进度记录相关方法
+    recordMoveProgress(isCorrect) {
+        if (!this.currentBranch || !window.pgnParser?.metadata?.id) {
+            return;
+        }
+
+        // 检查这步之后是否到达分支最后一步
+        const isBranchEnd = this.isCurrentBranchCompleted();
+
+        // 使用updateProgress函数记录移动
+        if (typeof updateProgress === 'function') {
+            updateProgress(
+                window.pgnParser.metadata.id, 
+                this.currentBranch.id, 
+                isCorrect, 
+                0, // duration - 我们可以添加计时逻辑
+                '',  // notes
+                isBranchEnd  // 是否到达分支最后一步
+            );
+        }
+    }
+
+    recordBranchProgress(isCompleted) {
+        if (!this.currentBranch || !window.pgnParser?.metadata?.id) {
+            return;
+        }
+
+        // 检查是否真的到达分支最后一步
+        const isBranchEnd = this.isCurrentBranchCompleted();
+        
+        // 使用updateProgress函数记录分支完成，传递is_branch_end参数
+        if (typeof updateProgress === 'function') {
+            updateProgress(
+                window.pgnParser.metadata.id, 
+                this.currentBranch.id, 
+                isCompleted, 
+                0, // duration
+                isCompleted ? '分支已完成' : '',
+                isBranchEnd // 新增：是否到达分支最后一步
+            );
+        }
+    }
+
+    // 加载用户进度
+    async loadUserProgress() {
+        if (!window.chessAPI || !window.chessAPI.isBackendAvailable || !window.pgnParser?.metadata?.id) {
+            console.log('跳过加载用户进度：后端不可用或没有PGN数据');
+            return;
+        }
+
+        try {
+            console.log('开始加载用户进度...');
+            const response = await fetch(`${window.chessAPI.baseURL}/progress/my`, {
+                method: 'GET',
+                credentials: 'include',
+                headers: {
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                if (result.success && result.progress) {
+                    console.log(`加载到${result.progress.length}条进度记录`);
+                    
+                    // 筛选当前PGN文件的进度记录
+                    const currentPgnProgress = result.progress.filter(p => 
+                        p.pgn_game_id === window.pgnParser.metadata.id
+                    );
+                    
+                    console.log(`当前PGN文件的进度记录：${currentPgnProgress.length}条`);
+                    
+                    // 将已完成的分支标记为完成
+                    currentPgnProgress.forEach(progress => {
+                        if (progress.is_completed) {
+                            this.completedBranches.add(progress.branch_id);
+                            console.log(`恢复已完成分支：${progress.branch_id}`);
+                        }
+                    });
+                    
+                    // 更新进度显示
+                    this.updateProgress();
+                    
+                    console.log(`✅ 用户进度加载完成，已完成分支数：${this.completedBranches.size}`);
+                } else {
+                    console.log('没有找到进度记录');
+                }
+            } else if (response.status === 401) {
+                console.log('用户未登录，跳过进度加载');
+            } else {
+                console.error('加载用户进度失败:', response.status, response.statusText);
+            }
+        } catch (error) {
+            console.error('加载用户进度请求失败:', error);
+        }
     }
 } 

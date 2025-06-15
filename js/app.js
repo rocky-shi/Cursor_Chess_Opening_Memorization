@@ -126,6 +126,13 @@ $(document).ready(function() {
                     window.chessBoard.completedBranches.clear();
                     window.chessBoard.computerUsedBranches.clear();
                     
+                    // 加载用户进度
+                    if (window.chessBoard && typeof window.chessBoard.loadUserProgress === 'function') {
+                        setTimeout(async () => {
+                            await window.chessBoard.loadUserProgress();
+                        }, 500);
+                    }
+                    
                     // 更新UI
                     updateUI();
                     
@@ -161,8 +168,8 @@ $(document).ready(function() {
     });
 
     // 开始背谱
-    $('#startStudy').click(function() {
-        const success = window.chessBoard.startStudy();
+    $('#startStudy').click(async function() {
+        const success = await window.chessBoard.startStudy();
         if (success) {
             updateButtonStates(true);
         }
@@ -175,12 +182,47 @@ $(document).ready(function() {
     });
 
     // 完全重置
-    $('#resetAll').click(function() {
+    $('#resetAll').click(async function() {
         // 停止背谱模式
         window.chessBoard.stopStudy();
         
-        // 清理背诵状态，但保留PGN数据
-        window.chessBoard.completedBranches.clear();
+        // 如果有后端连接和PGN数据，调用后端重置API
+        if (window.chessAPI && window.chessAPI.isBackendAvailable && window.pgnParser?.metadata?.id) {
+            try {
+                const response = await fetch(`${window.chessAPI.baseURL}/progress/reset`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        pgn_game_id: window.pgnParser.metadata.id
+                    })
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result.success) {
+                        showNotification(result.message, 'success');
+                        
+                        // 重新加载用户进度，保留已完成的分支
+                        await window.chessBoard.loadUserProgress();
+                    }
+                } else {
+                    console.error('重置进度失败:', response.status, response.statusText);
+                    showNotification('重置进度失败，请重试', 'error');
+                }
+            } catch (error) {
+                console.error('重置进度请求失败:', error);
+                showNotification('网络错误，重置进度失败', 'error');
+            }
+        } else {
+            // 本地模式，清理本地状态（但不影响已完成的分支）
+            // 只清理未完成的分支记录
+            console.log('本地模式：只清理未完成的分支状态');
+        }
+        
+        // 清理当前背诵状态
         window.chessBoard.computerUsedBranches.clear();
         
         // 重置正确率统计
@@ -274,8 +316,8 @@ $(document).ready(function() {
                 }
             });
         } else {
-            $('#startStudy').text('🎯 开始背谱').off('click').click(function() {
-                const success = window.chessBoard.startStudy();
+            $('#startStudy').text('🎯 开始背谱').off('click').click(async function() {
+                const success = await window.chessBoard.startStudy();
                 if (success) {
                     updateButtonStates(true);
                 }

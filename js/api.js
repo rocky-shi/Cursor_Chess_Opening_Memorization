@@ -10,7 +10,12 @@ class ChessAPI {
             this.baseURL = 'http://localhost:5000/api';
         } else {
             // 使用当前访问的域名和端口
-            this.baseURL = `${currentProtocol}//${currentHost}:${currentPort}/api`;
+            // 如果当前端口是80或443，则不显示端口号
+            let portStr = '';
+            if (currentPort && currentPort !== '80' && currentPort !== '443') {
+                portStr = `:${currentPort}`;
+            }
+            this.baseURL = `${currentProtocol}//${currentHost}${portStr}/api`;
         }
         
         console.log('API基础URL:', this.baseURL);
@@ -69,7 +74,11 @@ class ChessAPI {
             const startTime = Date.now();
             const response = await fetch(`${this.baseURL}/health`, {
                 method: 'GET',
-                timeout: 5000
+                credentials: 'include',  // 添加凭证支持
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                timeout: 10000  // 增加超时时间
             });
             
             const duration = Date.now() - startTime;
@@ -79,7 +88,8 @@ class ChessAPI {
                 available: this.isBackendAvailable,
                 status: response.status,
                 statusText: response.statusText,
-                duration: duration + 'ms'
+                duration: duration + 'ms',
+                headers: Object.fromEntries(response.headers.entries())
             });
             
             if (this.isBackendAvailable) {
@@ -92,6 +102,7 @@ class ChessAPI {
             console.error('后端连接失败:', {
                 error: error.message,
                 type: error.name,
+                stack: error.stack,
                 targetUrl: `${this.baseURL}/health`
             });
             
@@ -220,6 +231,13 @@ class ChessAPI {
                 if (parsedData.pgnData && parsedData.pgnData.branches) {
                     window.pgnParser = parsedData.pgnData;
                     console.log('已恢复棋谱数据到window.pgnParser，分支数量:', parsedData.pgnData.branches.length);
+                    
+                    // 如果有棋盘实例，加载用户进度
+                    if (window.chessBoard && typeof window.chessBoard.loadUserProgress === 'function') {
+                        setTimeout(async () => {
+                            await window.chessBoard.loadUserProgress();
+                        }, 1000);
+                    }
                     
                     // 显示加载的棋谱信息
                     if (parsedData.metadata && parsedData.metadata.fileName) {
@@ -447,6 +465,13 @@ class ChessAPI {
                 if (data.branches && data.branches.length > 0) {
                     window.pgnParser = data;
                     console.log('✅ 已恢复服务端棋谱数据到window.pgnParser，分支数量:', data.branches.length);
+                    
+                    // 如果有棋盘实例，加载用户进度
+                    if (window.chessBoard && typeof window.chessBoard.loadUserProgress === 'function') {
+                        setTimeout(async () => {
+                            await window.chessBoard.loadUserProgress();
+                        }, 1000);
+                    }
                     
                     // 显示加载的棋谱信息
                     if (data.metadata) {

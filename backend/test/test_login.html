@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>登录测试页面</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 12px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        .info {
+            background: #e7f3ff;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .log {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .error {
+            color: red;
+        }
+        .success {
+            color: green;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>国际象棋开局记忆系统 - 登录测试</h2>
+        
+        <div class="info">
+            <strong>当前访问信息：</strong><br>
+            <span id="currentInfo"></span>
+        </div>
+
+        <div class="form-group">
+            <label for="serverUrl">服务器地址:</label>
+            <input type="text" id="serverUrl" placeholder="http://192.168.10.72:5000">
+        </div>
+
+        <div class="form-group">
+            <label for="username">用户名:</label>
+            <input type="text" id="username" value="admin">
+        </div>
+
+        <div class="form-group">
+            <label for="password">密码:</label>
+            <input type="password" id="password" value="admin123">
+        </div>
+
+        <button onclick="testConnection()">测试连接</button>
+        <button onclick="testLogin()">测试登录</button>
+        <button onclick="testMe()">测试用户信息</button>
+        <button onclick="clearLog()">清除日志</button>
+
+        <div id="log" class="log"></div>
+    </div>
+
+    <script>
+        // 显示当前页面信息
+        document.getElementById('currentInfo').innerHTML = `
+            协议: ${window.location.protocol}<br>
+            主机: ${window.location.hostname}<br>
+            端口: ${window.location.port || '默认'}<br>
+            完整地址: ${window.location.href}
+        `;
+
+        // 自动设置服务器地址
+        const currentHost = window.location.hostname;
+        if (currentHost && currentHost !== 'localhost' && currentHost !== '127.0.0.1') {
+            document.getElementById('serverUrl').value = `http://${currentHost}:5000`;
+        } else {
+            document.getElementById('serverUrl').value = 'http://localhost:5000';
+        }
+
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const className = type === 'error' ? 'error' : (type === 'success' ? 'success' : '');
+            logDiv.innerHTML += `<div class="${className}">[${timestamp}] ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+
+        function getServerUrl() {
+            return document.getElementById('serverUrl').value || 'http://localhost:5000';
+        }
+
+        async function testConnection() {
+            const serverUrl = getServerUrl();
+            log(`测试连接到: ${serverUrl}/api/health`);
+            
+            try {
+                const response = await fetch(`${serverUrl}/api/health`, {
+                    method: 'GET',
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`连接成功! 响应: ${JSON.stringify(data)}`, 'success');
+                } else {
+                    log(`连接失败! 状态: ${response.status} ${response.statusText}`, 'error');
+                }
+            } catch (error) {
+                log(`连接错误: ${error.message}`, 'error');
+                log(`错误详情: ${error.stack}`, 'error');
+            }
+        }
+
+        async function testLogin() {
+            const serverUrl = getServerUrl();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            log(`测试登录: ${username} -> ${serverUrl}/api/auth/login`);
+            
+            try {
+                const response = await fetch(`${serverUrl}/api/auth/login`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        username: username,
+                        password: password
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    log(`登录成功! 响应: ${JSON.stringify(data)}`, 'success');
+                } else {
+                    log(`登录失败! 状态: ${response.status}, 响应: ${JSON.stringify(data)}`, 'error');
+                }
+            } catch (error) {
+                log(`登录错误: ${error.message}`, 'error');
+                log(`错误详情: ${error.stack}`, 'error');
+            }
+        }
+
+        async function testMe() {
+            const serverUrl = getServerUrl();
+            log(`测试获取用户信息: ${serverUrl}/api/auth/me`);
+            
+            try {
+                const response = await fetch(`${serverUrl}/api/auth/me`, {
+                    method: 'GET',
+                    credentials: 'include',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json();
+                
+                if (response.ok) {
+                    log(`获取用户信息成功! 响应: ${JSON.stringify(data)}`, 'success');
+                } else {
+                    log(`获取用户信息失败! 状态: ${response.status}, 响应: ${JSON.stringify(data)}`, 'error');
+                }
+            } catch (error) {
+                log(`请求错误: ${error.message}`, 'error');
+            }
+        }
+
+        // 页面加载时自动测试连接
+        window.onload = function() {
+            log('页面加载完成，开始自动测试连接...');
+            setTimeout(testConnection, 1000);
+        };
+    </script>
+</body>
+</html> 
