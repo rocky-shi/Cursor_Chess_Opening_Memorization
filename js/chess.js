@@ -513,13 +513,8 @@ class ChessBoard {
         $('#progress').text(`${progress}%`);
         
         if (progress === 100 && total > 0) {
-            // 计算最终正确率
-            const finalAccuracy = this.totalMoves > 0 ? Math.round((this.correctMoves / this.totalMoves) * 100) : 0;
-            const finalAccuracyText = this.totalMoves > 0 ? `${this.correctMoves}/${this.totalMoves} (${finalAccuracy}%)` : '0/0 (0%)';
-            
-            // 更新完成横幅显示最终正确率
-            $('#completionBanner').html(`🎉 恭喜！您已背完所有分支！最终正确率：<span style="font-weight: bold;">${finalAccuracyText}</span>`);
-            $('#completionBanner').show();
+            // 显示恭喜信息，并从后端获取真实的累积正确率
+            this.showCompletionBanner();
         }
     }
 
@@ -532,6 +527,58 @@ class ChessBoard {
             const accuracy = this.totalMoves > 0 ? Math.round((this.correctMoves / this.totalMoves) * 100) : 0;
             this.displayAccuracy(accuracy, this.correctMoves, this.totalMoves);
         }
+    }
+
+    async showCompletionBanner() {
+        // 默认显示信息（如果无法从后端获取数据，则使用当前会话数据）
+        let finalAccuracyText = '正在获取...';
+        
+        // 先显示横幅
+        $('#completionBanner').html(`🎉 恭喜！您已背完所有分支！最终正确率：<span style="font-weight: bold;">${finalAccuracyText}</span>`);
+        $('#completionBanner').show();
+        
+        // 尝试从后端获取真实的累积正确率
+        if (window.currentPgnId && window.chessAPI && window.chessAPI.isBackendAvailable) {
+            try {
+                const response = await fetch(`${window.chessAPI.baseURL}/progress/current-stats/${window.currentPgnId}`, {
+                    credentials: 'include'
+                });
+
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result.success) {
+                        // 使用后端返回的累积正确率
+                        finalAccuracyText = result.total_attempts > 0 ? 
+                            `${result.total_correct}/${result.total_attempts} (${result.accuracy_rate}%)` : 
+                            '0/0 (0%)';
+                        
+                        console.log(`最终正确率（后端数据）: ${finalAccuracyText}`);
+                    } else {
+                        throw new Error('获取统计数据失败');
+                    }
+                } else {
+                    throw new Error(`HTTP错误: ${response.status}`);
+                }
+            } catch (error) {
+                console.error('获取后端正确率失败:', error);
+                // 使用当前会话数据作为后备
+                const finalAccuracy = this.totalMoves > 0 ? Math.round((this.correctMoves / this.totalMoves) * 100) : 0;
+                finalAccuracyText = this.totalMoves > 0 ? 
+                    `${this.correctMoves}/${this.totalMoves} (${finalAccuracy}%)` : 
+                    '0/0 (0%)';
+                console.log(`最终正确率（会话数据）: ${finalAccuracyText}`);
+            }
+        } else {
+            // 没有后端连接，使用当前会话数据
+            const finalAccuracy = this.totalMoves > 0 ? Math.round((this.correctMoves / this.totalMoves) * 100) : 0;
+            finalAccuracyText = this.totalMoves > 0 ? 
+                `${this.correctMoves}/${this.totalMoves} (${finalAccuracy}%)` : 
+                '0/0 (0%)';
+            console.log(`最终正确率（离线模式）: ${finalAccuracyText}`);
+        }
+        
+        // 更新横幅显示真实的正确率
+        $('#completionBanner').html(`🎉 恭喜！您已背完所有分支！最终正确率：<span style="font-weight: bold;">${finalAccuracyText}</span>`);
     }
 
     async updateAccuracyFromBackend() {
