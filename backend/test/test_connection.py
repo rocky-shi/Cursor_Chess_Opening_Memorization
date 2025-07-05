@@ -66,14 +66,14 @@ def main():
         print("❌ 无法获取本机IP地址")
         return
     
-    port = 5000
+    port = 24377
     print(f"🔌 测试端口: {port}")
     
     # 测试本地访问
     print("\n1. 测试本地访问...")
     if test_port_accessible("127.0.0.1", port):
         print("✅ 本地端口可访问")
-        if test_api_endpoint("http://127.0.0.1:5000"):
+        if test_api_endpoint("http://127.0.0.1:24377"):
             print("✅ 本地API正常")
         else:
             print("❌ 本地API异常")
@@ -86,7 +86,7 @@ def main():
     print(f"\n2. 测试网络访问...")
     if test_port_accessible(local_ip, port):
         print("✅ 网络端口可访问")
-        if test_api_endpoint(f"http://{local_ip}:5000"):
+        if test_api_endpoint(f"http://{local_ip}:24377"):
             print("✅ 网络API正常")
         else:
             print("❌ 网络API异常")
@@ -96,7 +96,7 @@ def main():
         print("  - 防火墙阻止了端口访问")
         print("  - 服务未正确绑定到0.0.0.0")
     
-    print(f"\n📱 其他设备访问地址: http://{local_ip}:5000")
+    print(f"\n📱 其他设备访问地址: http://{local_ip}:24377")
     print("\n🔧 故障排除建议:")
     print("1. 确保后端服务正在运行")
     print("2. 检查Windows防火墙设置")

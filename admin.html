@@ -1468,6 +1468,7 @@
                         <tr>
                             <th>用户ID</th>
                             <th>用户名</th>
+                            <th>角色</th>
                             <th>邮箱</th>
                             <th>操作</th>
                         </tr>
@@ -1477,6 +1478,11 @@
                             <tr>
                                 <td>${user.user_id}</td>
                                 <td><strong>${user.username}</strong></td>
+                                <td>
+                                    <span class="badge ${user.role === 'admin' ? 'badge-admin' : 'badge-user'}">
+                                        ${user.role === 'admin' ? '管理员' : '用户'}
+                                    </span>
+                                </td>
                                 <td>${user.email || '-'}</td>
                                 <td>
                                     <button class="btn btn-success" onclick="grantUserPermission(${user.user_id}, '${user.username}')" style="font-size: 0.8rem;">

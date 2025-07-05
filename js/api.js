@@ -5,9 +5,9 @@ class ChessAPI {
         const currentHost = window.location.hostname;
         const currentPort = window.location.port || (currentProtocol === 'https:' ? '443' : '80');
         
-        // 如果是通过file://协议打开的，默认使用localhost:5000
+        // 如果是通过file://协议打开的，默认使用localhost:24377
         if (currentProtocol === 'file:') {
-            this.baseURL = 'http://localhost:5000/api';
+            this.baseURL = 'http://localhost:24377/api';
         } else {
             // 使用当前访问的域名和端口
             // 如果当前端口是80或443，则不显示端口号

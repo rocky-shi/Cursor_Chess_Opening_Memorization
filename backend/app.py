@@ -1345,23 +1345,24 @@ def get_pgn_permissions(pgn_id):
                     'granted_at': row[3]
                 })
             
-            # 获取所有用户列表（除了管理员）
+            # 获取所有用户列表（包括管理员）
             cursor.execute('''
-                SELECT id, username, email 
+                SELECT id, username, email, role
                 FROM users 
-                WHERE role != 'admin' AND is_active = 1
-                ORDER BY username
+                WHERE is_active = 1
+                ORDER BY role DESC, username
             ''')
             
             all_users = []
             authorized_user_ids = {user['user_id'] for user in authorized_users}
             
             for row in cursor.fetchall():
-                user_id, username, email = row
+                user_id, username, email, role = row
                 all_users.append({
                     'user_id': user_id,
                     'username': username,
                     'email': email,
+                    'role': role,
                     'has_access': user_id in authorized_user_ids
                 })
             
@@ -2251,12 +2252,12 @@ if __name__ == '__main__':
     print("   GET  /api/pgn-list  - 获取PGN历史列表")
     print("   GET  /api/test-tree - 测试树状结构")
     print("")
-    print("🌐 服务地址: http://localhost:5000")
-    print("📁 前端页面: 直接访问 http://localhost:5000 即可使用")
-    print("📁 测试页面: 访问 http://localhost:5000/tree_test.html")
+    print("🌐 服务地址: http://localhost:24377")
+    print("📁 前端页面: 直接访问 http://localhost:24377 即可使用")
+    print("📁 测试页面: 访问 http://localhost:24377/tree_test.html")
     print("👤 默认管理员账号: admin / admin123")
     print("💡 文件上传: 支持任意格式文件上传，系统会智能识别PGN格式")
     print("📈 进度跟踪: 系统会自动记录每个用户的学习进度和统计信息")
     print("=" * 60)
     
-    app.run(debug=True, host='0.0.0.0', port=5000, threaded=True) 
+    app.run(debug=True, host='0.0.0.0', port=24377, threaded=True) 

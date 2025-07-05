@@ -590,29 +590,221 @@
         // 加载PGN统计数据
         async function loadPGNStats() {
             try {
-                const response = await fetch(`${API_BASE}/progress/by-pgn`, {
-                    credentials: 'include'
-                });
+                // 同时获取学习进度和可用PGN列表
+                const [progressResponse, pgnListResponse] = await Promise.all([
+                    fetch(`${API_BASE}/progress/by-pgn`, { credentials: 'include' }),
+                    fetch(`${API_BASE}/pgn-list?limit=50`, { credentials: 'include' })
+                ]);
 
-                if (!response.ok) {
-                    throw new Error('获取PGN统计失败');
-                }
+                const progressResult = progressResponse.ok ? await progressResponse.json() : null;
+                const pgnListResult = pgnListResponse.ok ? await pgnListResponse.json() : null;
 
-                const result = await response.json();
-                if (!result.success) {
-                    throw new Error('获取PGN统计失败');
-                }
+                // 获取有学习记录的PGN
+                const pgnProgress = (progressResult && progressResult.success) ? progressResult.pgn_progress : [];
+                
+                // 获取所有可访问的PGN
+                const allAccessiblePGNs = (pgnListResult && pgnListResult.success) ? pgnListResult.data : [];
 
-                if (result.pgn_progress && result.pgn_progress.length > 0) {
-                    renderPGNStats(result.pgn_progress);
+                // 合并数据：有学习记录的PGN + 没有学习记录但有权限的PGN
+                const combinedData = await mergePGNData(pgnProgress, allAccessiblePGNs);
+
+                if (combinedData.length > 0) {
+                    renderCombinedPGNStats(combinedData);
                 } else {
-                    // 没有学习记录，显示可用的PGN列表
-                    await loadAvailablePGNs();
+                    showNoPGNsMessage();
                 }
             } catch (error) {
                 console.error('加载PGN统计失败:', error);
-                // 尝试加载可用的PGN列表
-                await loadAvailablePGNs();
+                showNoPGNsMessage();
+            }
+        }
+
+        // 合并PGN数据：学习进度 + 可用PGN
+        async function mergePGNData(pgnProgress, allAccessiblePGNs) {
+            const combinedData = [];
+            
+            // 创建已有学习记录的PGN ID集合
+            const progressPGNIds = new Set(pgnProgress.map(pgn => pgn.pgn_id));
+            
+            // 添加有学习记录的PGN（带进度信息）
+            pgnProgress.forEach(pgn => {
+                combinedData.push({
+                    ...pgn,
+                    hasProgress: true
+                });
+            });
+            
+            // 添加有权限但没有学习记录的PGN
+            allAccessiblePGNs.forEach(pgn => {
+                if (!progressPGNIds.has(pgn.id)) {
+                    combinedData.push({
+                        pgn_id: pgn.id,
+                        filename: pgn.filename,
+                        total_branches: pgn.total_branches,
+                        total_games: pgn.total_games,
+                        upload_time: pgn.upload_time,
+                        file_size: pgn.file_size,
+                        hasProgress: false,
+                        // 默认值
+                        practiced_branches: 0,
+                        completed_branches: 0,
+                        mastered_branches: 0,
+                        completion_rate: 0,
+                        mastery_rate: 0,
+                        total_correct: 0,
+                        total_attempts: 0,
+                        accuracy_rate: 0,
+                        avg_mastery: 0,
+                        last_practice_time: null,
+                        status: "未开始",
+                        status_class: "not-started"
+                    });
+                }
+            });
+            
+            // 按最后练习时间排序，未开始的排在最后
+            combinedData.sort((a, b) => {
+                if (!a.hasProgress && !b.hasProgress) {
+                    return a.filename.localeCompare(b.filename);
+                }
+                if (!a.hasProgress) return 1;
+                if (!b.hasProgress) return -1;
+                
+                const timeA = new Date(a.last_practice_time || 0);
+                const timeB = new Date(b.last_practice_time || 0);
+                return timeB - timeA;
+            });
+            
+            return combinedData;
+        }
+
+        // 渲染合并的PGN统计表格
+        function renderCombinedPGNStats(combinedData) {
+            const container = document.getElementById('pgnStatsContainer');
+            
+            const tableHTML = `
+                <table class="pgn-stats-table">
+                    <thead>
+                        <tr>
+                            <th width="3%"></th>
+                            <th width="22%">PGN文件名</th>
+                            <th width="9%">总分支数</th>
+                            <th width="11%">掌握度</th>
+                            <th width="8%">状态</th>
+                            <th width="8%">正确次数</th>
+                            <th width="8%">总尝试</th>
+                            <th width="8%">正确率</th>
+                            <th width="13%">最后练习</th>
+                            <th width="10%">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${combinedData.map(pgn => renderCombinedPGNRow(pgn)).join('')}
+                    </tbody>
+                </table>
+            `;
+
+            container.innerHTML = tableHTML;
+        }
+
+        // 渲染合并的PGN行
+        function renderCombinedPGNRow(pgn) {
+            const lastPracticeTime = pgn.last_practice_time ? formatDateTime(pgn.last_practice_time) : '-';
+            
+            if (!pgn.hasProgress) {
+                // 没有学习记录的PGN，显示开始学习按钮
+                return `
+                    <tr id="pgn-${pgn.pgn_id}" class="no-progress-row">
+                        <td>
+                            <span class="expand-icon">📚</span>
+                        </td>
+                        <td>
+                            <strong>${pgn.filename}</strong>
+                            <div class="stat-label" style="color: #666;">等待开始学习</div>
+                        </td>
+                        <td>
+                            <div class="stat-number">${pgn.total_branches}</div>
+                            <div class="stat-label">个分支</div>
+                        </td>
+                        <td>
+                            <div class="progress-container">
+                                <div class="progress-bar" style="width: 0%"></div>
+                            </div>
+                            <span class="progress-text">0%</span>
+                            <div class="stat-label">未开始</div>
+                        </td>
+                        <td>
+                            <span class="status-badge status-not-started">未开始</span>
+                        </td>
+                        <td>
+                            <div class="stat-number">-</div>
+                        </td>
+                        <td>
+                            <div class="stat-number">-</div>
+                        </td>
+                        <td>
+                            <strong>-</strong>
+                        </td>
+                        <td>
+                            <small>-</small>
+                        </td>
+                        <td onclick="event.stopPropagation()">
+                            <div class="action-buttons">
+                                <button class="btn btn-primary btn-sm" onclick="startLearning(${pgn.pgn_id})" title="开始学习">
+                                    开始学习
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            } else {
+                // 有学习记录的PGN，显示详细进度
+                return `
+                    <tr id="pgn-${pgn.pgn_id}" onclick="toggleBranchDetails(${pgn.pgn_id})">
+                        <td>
+                            <span class="expand-icon" id="icon-${pgn.pgn_id}">▶</span>
+                        </td>
+                        <td>
+                            <strong>${pgn.filename}</strong>
+                        </td>
+                        <td>
+                            <div class="stat-number">${pgn.total_branches}</div>
+                            <div class="stat-label">已练习${pgn.practiced_branches}</div>
+                        </td>
+                        <td>
+                            <div class="progress-container">
+                                <div class="progress-bar" style="width: ${pgn.mastery_rate || pgn.avg_mastery}%"></div>
+                            </div>
+                            <span class="progress-text">${pgn.mastery_rate || pgn.avg_mastery}%</span>
+                            <div class="stat-label">已掌握${pgn.mastered_branches || 0}</div>
+                        </td>
+                        <td>
+                            <span class="status-badge status-${pgn.status_class}">${pgn.status}</span>
+                        </td>
+                        <td>
+                            <div class="stat-number">${pgn.total_correct}</div>
+                        </td>
+                        <td>
+                            <div class="stat-number">${pgn.total_attempts}</div>
+                        </td>
+                        <td>
+                            <strong>${pgn.accuracy_rate}%</strong>
+                        </td>
+                        <td>
+                            <small>${lastPracticeTime}</small>
+                        </td>
+                        <td onclick="event.stopPropagation()">
+                            <div class="action-buttons">
+                                <button class="btn btn-primary btn-sm" onclick="startLearning(${pgn.pgn_id})" title="继续学习">
+                                    继续学习
+                                </button>
+                                <button class="btn btn-danger btn-sm" onclick="resetPGNProgress(${pgn.pgn_id}, '${pgn.filename.replace(/'/g, '\\\'')}')" title="重置进度">
+                                    重置
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
             }
         }
 
