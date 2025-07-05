@@ -318,6 +318,54 @@
             padding: 0 2rem;
         }
 
+        /* 操作按钮容器 */
+        .action-buttons-container {
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: flex-start;
+            max-width: 100%;
+        }
+
+        .btn-action {
+            white-space: nowrap;
+            min-width: 60px;
+            font-size: 0.85rem;
+            padding: 0.4rem 0.8rem;
+            flex: 0 0 auto;
+        }
+
+        /* 三个按钮的特殊布局 */
+        .action-buttons-container.three-buttons {
+            flex-direction: row;
+            gap: 3px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .action-buttons-container.three-buttons .btn-action {
+            font-size: 0.8rem;
+            padding: 0.35rem 0.7rem;
+            min-width: 70px;
+            flex: 1 1 auto;
+        }
+
+        @media (max-width: 900px) {
+            .action-buttons-container.three-buttons {
+                flex-direction: column;
+                gap: 2px;
+                align-items: stretch;
+            }
+
+            .action-buttons-container.three-buttons .btn-action {
+                font-size: 0.75rem;
+                padding: 0.3rem 0.6rem;
+                width: 100%;
+                min-width: auto;
+            }
+        }
+
         /* 移动端优化 */
         @media (max-width: 768px) {
             .header {
@@ -409,7 +457,7 @@
             /* 操作按钮列优化 */
             .table th:last-child,
             .table td:last-child {
-                min-width: 120px;
+                min-width: 150px;
                 position: sticky;
                 right: 0;
                 background: white;
@@ -423,6 +471,27 @@
 
             .table tbody tr:hover td:last-child {
                 background: #f8f9fa;
+            }
+
+            /* 移动端操作按钮优化 */
+            .action-buttons-container {
+                flex-direction: column;
+                gap: 3px;
+                align-items: stretch;
+            }
+
+            .btn-action {
+                font-size: 0.75rem;
+                padding: 0.3rem 0.6rem;
+                min-width: auto;
+                width: 100%;
+                text-align: center;
+            }
+
+            /* 移动端三个按钮的特殊样式 */
+            .action-buttons-container.three-buttons .btn-action {
+                font-size: 0.7rem;
+                padding: 0.25rem 0.4rem;
             }
 
             .badge {
@@ -496,7 +565,17 @@
 
             .table th:last-child,
             .table td:last-child {
-                min-width: 100px;
+                min-width: 110px;
+            }
+
+            .btn-action {
+                font-size: 0.7rem;
+                padding: 0.25rem 0.5rem;
+            }
+
+            .action-buttons-container.three-buttons .btn-action {
+                font-size: 0.65rem;
+                padding: 0.2rem 0.3rem;
             }
 
             .btn {
@@ -531,6 +610,21 @@
 
             .stat-label {
                 font-size: 0.65rem;
+            }
+
+            .table th:last-child,
+            .table td:last-child {
+                min-width: 100px;
+            }
+
+            .btn-action {
+                font-size: 0.65rem;
+                padding: 0.2rem 0.4rem;
+            }
+
+            .action-buttons-container.three-buttons .btn-action {
+                font-size: 0.6rem;
+                padding: 0.15rem 0.25rem;
             }
         }
     </style>
@@ -878,9 +972,9 @@
                                     <td>${user.last_login ? formatDateTime(user.last_login) : '-'}</td>
                                     <td>${formatDateTime(user.created_at)}</td>
                                     <td>
-                                        <div style="display: flex; gap: 5px; flex-wrap: wrap;">
-                                            <button class="btn btn-warning" onclick="editUser(${user.id})" style="white-space: nowrap;">编辑</button>
-                                            ${user.id !== currentUser.id ? `<button class="btn btn-danger" onclick="deleteUser(${user.id}, '${user.username}')" style="white-space: nowrap;">删除</button>` : ''}
+                                        <div class="action-buttons-container">
+                                            <button class="btn btn-warning btn-action" onclick="editUser(${user.id})">编辑</button>
+                                            ${user.id !== currentUser.id ? `<button class="btn btn-danger btn-action" onclick="deleteUser(${user.id}, '${user.username}')">删除</button>` : ''}
                                         </div>
                                     </td>
                                 </tr>
@@ -1115,10 +1209,10 @@
                                         <span class="badge badge-admin">${pgn.total_attempts}</span>
                                     </td>
                                     <td>
-                                        <div style="display: flex; gap: 5px; flex-wrap: wrap;">
-                                            <button class="btn btn-primary" onclick="managePGNPermissions(${pgn.id}, '${pgn.filename.replace(/'/g, '\\\'')}')" style="font-size: 0.8rem; white-space: nowrap;">权限管理</button>
-                                            <button class="btn btn-info" onclick="viewPGNUsers(${pgn.id}, '${pgn.filename.replace(/'/g, '\\\'')}')" style="font-size: 0.8rem; white-space: nowrap;">查看用户</button>
-                                            <button class="btn btn-danger" onclick="deletePGN(${pgn.id}, '${pgn.filename.replace(/'/g, '\\\'')}')" style="font-size: 0.8rem; white-space: nowrap;">删除</button>
+                                        <div class="action-buttons-container three-buttons">
+                                            <button class="btn btn-primary btn-action" onclick="managePGNPermissions(${pgn.id}, '${pgn.filename.replace(/'/g, '\\\'')}')" title="权限管理">权限管理</button>
+                                            <button class="btn btn-info btn-action" onclick="viewPGNUsers(${pgn.id}, '${pgn.filename.replace(/'/g, '\\\'')}')" title="查看用户">查看用户</button>
+                                            <button class="btn btn-danger btn-action" onclick="deletePGN(${pgn.id}, '${pgn.filename.replace(/'/g, '\\\'')}')" title="删除">删除</button>
                                         </div>
                                     </td>
                                 </tr>
@@ -1405,9 +1499,11 @@
                                     <td><strong>${user.accuracy_rate}%</strong></td>
                                     <td><small>${user.last_practice_time ? formatDateTime(user.last_practice_time) : '-'}</small></td>
                                     <td>
-                                        <button class="btn btn-warning" onclick="adminResetUserProgress(${data.pgn_id}, ${user.user_id}, '${user.username}', '${data.pgn_filename}')" style="font-size: 0.7rem; white-space: nowrap;">
-                                            彻底重置
-                                        </button>
+                                        <div class="action-buttons-container">
+                                            <button class="btn btn-warning btn-action" onclick="adminResetUserProgress(${data.pgn_id}, ${user.user_id}, '${user.username}', '${data.pgn_filename}')" title="彻底重置">
+                                                彻底重置
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             `).join('')}
@@ -1546,9 +1642,11 @@
                                     <td>${user.email || '-'}</td>
                                     <td>${formatDateTime(user.granted_at)}</td>
                                     <td>
-                                        <button class="btn btn-danger" onclick="revokeUserPermission(${user.user_id}, '${user.username}')" style="font-size: 0.8rem; white-space: nowrap;">
-                                            撤销权限
-                                        </button>
+                                        <div class="action-buttons-container">
+                                            <button class="btn btn-danger btn-action" onclick="revokeUserPermission(${user.user_id}, '${user.username}')" title="撤销权限">
+                                                撤销权限
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             `).join('')}
@@ -1595,9 +1693,11 @@
                                     </td>
                                     <td>${user.email || '-'}</td>
                                     <td>
-                                        <button class="btn btn-success" onclick="grantUserPermission(${user.user_id}, '${user.username}')" style="font-size: 0.8rem; white-space: nowrap;">
-                                            授予权限
-                                        </button>
+                                        <div class="action-buttons-container">
+                                            <button class="btn btn-success btn-action" onclick="grantUserPermission(${user.user_id}, '${user.username}')" title="授予权限">
+                                                授予权限
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             `).join('')}
