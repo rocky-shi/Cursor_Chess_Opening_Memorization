@@ -285,9 +285,9 @@
 
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
             gap: 1rem;
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
         }
 
         .stat-card {
@@ -310,30 +310,42 @@
             font-size: 0.9rem;
         }
 
+        /* 表格水平滚动包装器 */
+        .table-wrapper {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            margin: 0 -2rem;
+            padding: 0 2rem;
+        }
+
         /* 移动端优化 */
         @media (max-width: 768px) {
             .header {
                 padding: 1rem;
                 flex-direction: column;
-                gap: 1rem;
-                align-items: flex-start;
+                gap: 0.5rem;
+                align-items: stretch;
             }
 
             .header h1 {
-                font-size: 1.5rem;
+                font-size: 1.3rem;
                 margin: 0;
+                text-align: center;
             }
 
             .user-info {
                 font-size: 0.85rem;
                 flex-direction: column;
                 gap: 0.5rem;
-                align-items: flex-start;
+                align-items: center;
             }
 
             .btn-logout {
                 padding: 0.4rem 0.8rem;
                 font-size: 0.8rem;
+                border-radius: 6px;
+                align-self: center;
+                min-width: 80px;
             }
 
             .container {
@@ -342,19 +354,21 @@
 
             .stats-grid {
                 grid-template-columns: 1fr 1fr;
-                gap: 0.75rem;
+                gap: 0.5rem;
+                margin-bottom: 1rem;
             }
 
             .stat-card {
-                padding: 1rem;
+                padding: 0.75rem;
             }
 
             .stat-number {
-                font-size: 1.5rem;
+                font-size: 1.2rem;
+                margin-bottom: 0.3rem;
             }
 
             .stat-label {
-                font-size: 0.8rem;
+                font-size: 0.75rem;
             }
 
             .card-header {
@@ -374,17 +388,41 @@
                 white-space: nowrap;
             }
 
-            .table-responsive {
+            /* 移动端表格优化 */
+            .table-wrapper {
+                margin: 0 -1rem;
+                padding: 0 1rem;
+            }
+
+            .table {
                 font-size: 0.8rem;
+                min-width: 800px; /* 确保表格有足够宽度显示所有列 */
             }
 
             .table th,
             .table td {
-                padding: 0.5rem 0.25rem;
+                padding: 0.5rem 0.3rem;
                 white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
-                max-width: 100px;
+                min-width: 80px;
+            }
+
+            /* 操作按钮列优化 */
+            .table th:last-child,
+            .table td:last-child {
+                min-width: 120px;
+                position: sticky;
+                right: 0;
+                background: white;
+                border-left: 1px solid #dee2e6;
+                z-index: 10;
+            }
+
+            .table th:last-child {
+                background: #f8f9fa;
+            }
+
+            .table tbody tr:hover td:last-child {
+                background: #f8f9fa;
             }
 
             .badge {
@@ -409,18 +447,56 @@
         }
 
         @media (max-width: 480px) {
-            .stats-grid {
-                grid-template-columns: 1fr;
+            .header {
+                padding: 0.8rem;
             }
 
-            .table-responsive {
+            .header h1 {
+                font-size: 1.2rem;
+            }
+
+            .user-info {
+                font-size: 0.8rem;
+            }
+
+            .btn-logout {
+                padding: 0.3rem 0.6rem;
                 font-size: 0.75rem;
+            }
+
+            .stats-grid {
+                grid-template-columns: 1fr 1fr;
+                gap: 0.4rem;
+                margin-bottom: 0.8rem;
+            }
+
+            .stat-card {
+                padding: 0.6rem;
+            }
+
+            .stat-number {
+                font-size: 1.1rem;
+                margin-bottom: 0.25rem;
+            }
+
+            .stat-label {
+                font-size: 0.7rem;
+            }
+
+            .table {
+                font-size: 0.75rem;
+                min-width: 700px;
             }
 
             .table th,
             .table td {
                 padding: 0.4rem 0.2rem;
-                max-width: 80px;
+                min-width: 70px;
+            }
+
+            .table th:last-child,
+            .table td:last-child {
+                min-width: 100px;
             }
 
             .btn {
@@ -434,6 +510,27 @@
 
             .card-header h2 {
                 font-size: 1.2rem;
+            }
+        }
+
+        @media (max-width: 360px) {
+            .stats-grid {
+                grid-template-columns: 1fr 1fr;
+                gap: 0.3rem;
+                margin-bottom: 0.6rem;
+            }
+
+            .stat-card {
+                padding: 0.5rem;
+            }
+
+            .stat-number {
+                font-size: 1rem;
+                margin-bottom: 0.2rem;
+            }
+
+            .stat-label {
+                font-size: 0.65rem;
             }
         }
     </style>
@@ -754,39 +851,43 @@
             }
 
             const tableHTML = `
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>用户名</th>
-                            <th>邮箱</th>
-                            <th>角色</th>
-                            <th>状态</th>
-                            <th>登录次数</th>
-                            <th>最后登录</th>
-                            <th>创建时间</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${users.map(user => `
+                <div class="table-wrapper">
+                    <table class="table">
+                        <thead>
                             <tr>
-                                <td>${user.id}</td>
-                                <td>${user.username}</td>
-                                <td>${user.email || '-'}</td>
-                                <td><span class="badge badge-${user.role}">${user.role === 'admin' ? '管理员' : '普通用户'}</span></td>
-                                <td><span class="badge badge-${user.is_active ? 'active' : 'inactive'}">${user.is_active ? '启用' : '禁用'}</span></td>
-                                <td>${user.login_count || 0}</td>
-                                <td>${user.last_login ? formatDateTime(user.last_login) : '-'}</td>
-                                <td>${formatDateTime(user.created_at)}</td>
-                                <td>
-                                    <button class="btn btn-warning" onclick="editUser(${user.id})">编辑</button>
-                                    ${user.id !== currentUser.id ? `<button class="btn btn-danger" onclick="deleteUser(${user.id}, '${user.username}')">删除</button>` : ''}
-                                </td>
+                                <th>ID</th>
+                                <th>用户名</th>
+                                <th>邮箱</th>
+                                <th>角色</th>
+                                <th>状态</th>
+                                <th>登录次数</th>
+                                <th>最后登录</th>
+                                <th>创建时间</th>
+                                <th>操作</th>
                             </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            ${users.map(user => `
+                                <tr>
+                                    <td>${user.id}</td>
+                                    <td>${user.username}</td>
+                                    <td>${user.email || '-'}</td>
+                                    <td><span class="badge badge-${user.role}">${user.role === 'admin' ? '管理员' : '普通用户'}</span></td>
+                                    <td><span class="badge badge-${user.is_active ? 'active' : 'inactive'}">${user.is_active ? '启用' : '禁用'}</span></td>
+                                    <td>${user.login_count || 0}</td>
+                                    <td>${user.last_login ? formatDateTime(user.last_login) : '-'}</td>
+                                    <td>${formatDateTime(user.created_at)}</td>
+                                    <td>
+                                        <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+                                            <button class="btn btn-warning" onclick="editUser(${user.id})" style="white-space: nowrap;">编辑</button>
+                                            ${user.id !== currentUser.id ? `<button class="btn btn-danger" onclick="deleteUser(${user.id}, '${user.username}')" style="white-space: nowrap;">删除</button>` : ''}
+                                        </div>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
             `;
 
             container.innerHTML = tableHTML;
@@ -976,51 +1077,55 @@
             }
 
             const tableHTML = `
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>ID</th>
-                            <th>文件名</th>
-                            <th>上传时间</th>
-                            <th>文件大小</th>
-                            <th>总分支数</th>
-                            <th>游戏数</th>
-                            <th>上传者</th>
-                            <th>使用用户数</th>
-                            <th>总练习次数</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${pgnList.map(pgn => `
+                <div class="table-wrapper">
+                    <table class="table">
+                        <thead>
                             <tr>
-                                <td>${pgn.id}</td>
-                                <td>
-                                    <strong>${pgn.filename}</strong>
-                                    ${pgn.filename.length > 20 ? `<br><small style="color: #666;">${pgn.filename}</small>` : ''}
-                                </td>
-                                <td>${formatDateTime(pgn.upload_time)}</td>
-                                <td>${formatFileSize(pgn.file_size)}</td>
-                                <td>
-                                    <span class="badge badge-user">${pgn.total_branches}</span>
-                                </td>
-                                <td>${pgn.total_games}</td>
-                                <td>${pgn.uploaded_by}</td>
-                                <td>
-                                    <span class="badge badge-active">${pgn.users_count}</span>
-                                </td>
-                                <td>
-                                    <span class="badge badge-admin">${pgn.total_attempts}</span>
-                                </td>
-                                <td>
-                                    <button class="btn btn-primary" onclick="managePGNPermissions(${pgn.id}, '${pgn.filename.replace(/'/g, '\\\'')}')" style="font-size: 0.8rem; margin-right: 5px;">权限管理</button>
-                                    <button class="btn btn-info" onclick="viewPGNUsers(${pgn.id}, '${pgn.filename.replace(/'/g, '\\\'')}')" style="font-size: 0.8rem; margin-right: 5px;">查看用户</button>
-                                    <button class="btn btn-danger" onclick="deletePGN(${pgn.id}, '${pgn.filename.replace(/'/g, '\\\'')}')" style="font-size: 0.8rem;">删除</button>
-                                </td>
+                                <th>ID</th>
+                                <th>文件名</th>
+                                <th>上传时间</th>
+                                <th>文件大小</th>
+                                <th>总分支数</th>
+                                <th>游戏数</th>
+                                <th>上传者</th>
+                                <th>使用用户数</th>
+                                <th>总练习次数</th>
+                                <th>操作</th>
                             </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            ${pgnList.map(pgn => `
+                                <tr>
+                                    <td>${pgn.id}</td>
+                                    <td>
+                                        <strong>${pgn.filename}</strong>
+                                        ${pgn.filename.length > 20 ? `<br><small style="color: #666;">${pgn.filename}</small>` : ''}
+                                    </td>
+                                    <td>${formatDateTime(pgn.upload_time)}</td>
+                                    <td>${formatFileSize(pgn.file_size)}</td>
+                                    <td>
+                                        <span class="badge badge-user">${pgn.total_branches}</span>
+                                    </td>
+                                    <td>${pgn.total_games}</td>
+                                    <td>${pgn.uploaded_by}</td>
+                                    <td>
+                                        <span class="badge badge-active">${pgn.users_count}</span>
+                                    </td>
+                                    <td>
+                                        <span class="badge badge-admin">${pgn.total_attempts}</span>
+                                    </td>
+                                    <td>
+                                        <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+                                            <button class="btn btn-primary" onclick="managePGNPermissions(${pgn.id}, '${pgn.filename.replace(/'/g, '\\\'')}')" style="font-size: 0.8rem; white-space: nowrap;">权限管理</button>
+                                            <button class="btn btn-info" onclick="viewPGNUsers(${pgn.id}, '${pgn.filename.replace(/'/g, '\\\'')}')" style="font-size: 0.8rem; white-space: nowrap;">查看用户</button>
+                                            <button class="btn btn-danger" onclick="deletePGN(${pgn.id}, '${pgn.filename.replace(/'/g, '\\\'')}')" style="font-size: 0.8rem; white-space: nowrap;">删除</button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
             `;
 
             container.innerHTML = tableHTML;
@@ -1260,53 +1365,55 @@
                     <h4 style="margin: 0 0 0.5rem 0; color: #2c3e50;">📊 ${data.pgn_filename}</h4>
                     <p style="margin: 0; color: #666; font-size: 0.9rem;">总分支数: ${data.total_branches} | 学习用户数: ${data.user_progress.length}</p>
                 </div>
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>用户ID</th>
-                            <th>用户名</th>
-                            <th>邮箱</th>
-                            <th>状态</th>
-                            <th>掌握度</th>
-                            <th>已练习</th>
-                            <th>已完成</th>
-                            <th>已掌握</th>
-                            <th>正确率</th>
-                            <th>最后练习</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${data.user_progress.map(user => `
+                <div class="table-wrapper">
+                    <table class="table">
+                        <thead>
                             <tr>
-                                <td>${user.user_id}</td>
-                                <td><strong>${user.username}</strong></td>
-                                <td>${user.email || '-'}</td>
-                                <td>
-                                    <span class="badge badge-${user.status_class}">${user.status}</span>
-                                </td>
-                                <td>
-                                    <div style="display: flex; align-items: center; gap: 8px;">
-                                        <div style="width: 60px; height: 8px; background: #f0f0f0; border-radius: 4px; overflow: hidden;">
-                                            <div style="height: 100%; background: #007bff; width: ${user.mastery_rate}%;"></div>
-                                        </div>
-                                        <span style="font-size: 0.8rem; font-weight: bold;">${user.mastery_rate}%</span>
-                                    </div>
-                                </td>
-                                <td>${user.practiced_branches}/${data.total_branches}</td>
-                                <td>${user.completed_branches}</td>
-                                <td>${user.mastered_branches}</td>
-                                <td><strong>${user.accuracy_rate}%</strong></td>
-                                <td><small>${user.last_practice_time ? formatDateTime(user.last_practice_time) : '-'}</small></td>
-                                <td>
-                                    <button class="btn btn-warning" onclick="adminResetUserProgress(${data.pgn_id}, ${user.user_id}, '${user.username}', '${data.pgn_filename}')" style="font-size: 0.7rem;">
-                                        彻底重置
-                                    </button>
-                                </td>
+                                <th>用户ID</th>
+                                <th>用户名</th>
+                                <th>邮箱</th>
+                                <th>状态</th>
+                                <th>掌握度</th>
+                                <th>已练习</th>
+                                <th>已完成</th>
+                                <th>已掌握</th>
+                                <th>正确率</th>
+                                <th>最后练习</th>
+                                <th>操作</th>
                             </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            ${data.user_progress.map(user => `
+                                <tr>
+                                    <td>${user.user_id}</td>
+                                    <td><strong>${user.username}</strong></td>
+                                    <td>${user.email || '-'}</td>
+                                    <td>
+                                        <span class="badge badge-${user.status_class}">${user.status}</span>
+                                    </td>
+                                    <td>
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <div style="width: 60px; height: 8px; background: #f0f0f0; border-radius: 4px; overflow: hidden;">
+                                                <div style="height: 100%; background: #007bff; width: ${user.mastery_rate}%;"></div>
+                                            </div>
+                                            <span style="font-size: 0.8rem; font-weight: bold;">${user.mastery_rate}%</span>
+                                        </div>
+                                    </td>
+                                    <td>${user.practiced_branches}/${data.total_branches}</td>
+                                    <td>${user.completed_branches}</td>
+                                    <td>${user.mastered_branches}</td>
+                                    <td><strong>${user.accuracy_rate}%</strong></td>
+                                    <td><small>${user.last_practice_time ? formatDateTime(user.last_practice_time) : '-'}</small></td>
+                                    <td>
+                                        <button class="btn btn-warning" onclick="adminResetUserProgress(${data.pgn_id}, ${user.user_id}, '${user.username}', '${data.pgn_filename}')" style="font-size: 0.7rem; white-space: nowrap;">
+                                            彻底重置
+                                        </button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
             `;
 
             container.innerHTML = tableHTML;
@@ -1420,32 +1527,34 @@
             }
 
             const usersHTML = `
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>用户ID</th>
-                            <th>用户名</th>
-                            <th>邮箱</th>
-                            <th>授权时间</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${authorizedUsers.map(user => `
+                <div class="table-wrapper">
+                    <table class="table">
+                        <thead>
                             <tr>
-                                <td>${user.user_id}</td>
-                                <td><strong>${user.username}</strong></td>
-                                <td>${user.email || '-'}</td>
-                                <td>${formatDateTime(user.granted_at)}</td>
-                                <td>
-                                    <button class="btn btn-danger" onclick="revokeUserPermission(${user.user_id}, '${user.username}')" style="font-size: 0.8rem;">
-                                        撤销权限
-                                    </button>
-                                </td>
+                                <th>用户ID</th>
+                                <th>用户名</th>
+                                <th>邮箱</th>
+                                <th>授权时间</th>
+                                <th>操作</th>
                             </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            ${authorizedUsers.map(user => `
+                                <tr>
+                                    <td>${user.user_id}</td>
+                                    <td><strong>${user.username}</strong></td>
+                                    <td>${user.email || '-'}</td>
+                                    <td>${formatDateTime(user.granted_at)}</td>
+                                    <td>
+                                        <button class="btn btn-danger" onclick="revokeUserPermission(${user.user_id}, '${user.username}')" style="font-size: 0.8rem; white-space: nowrap;">
+                                            撤销权限
+                                        </button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
             `;
 
             container.innerHTML = usersHTML;
@@ -1463,36 +1572,38 @@
             }
 
             const usersHTML = `
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>用户ID</th>
-                            <th>用户名</th>
-                            <th>角色</th>
-                            <th>邮箱</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${usersWithoutAccess.map(user => `
+                <div class="table-wrapper">
+                    <table class="table">
+                        <thead>
                             <tr>
-                                <td>${user.user_id}</td>
-                                <td><strong>${user.username}</strong></td>
-                                <td>
-                                    <span class="badge ${user.role === 'admin' ? 'badge-admin' : 'badge-user'}">
-                                        ${user.role === 'admin' ? '管理员' : '用户'}
-                                    </span>
-                                </td>
-                                <td>${user.email || '-'}</td>
-                                <td>
-                                    <button class="btn btn-success" onclick="grantUserPermission(${user.user_id}, '${user.username}')" style="font-size: 0.8rem;">
-                                        授予权限
-                                    </button>
-                                </td>
+                                <th>用户ID</th>
+                                <th>用户名</th>
+                                <th>角色</th>
+                                <th>邮箱</th>
+                                <th>操作</th>
                             </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            ${usersWithoutAccess.map(user => `
+                                <tr>
+                                    <td>${user.user_id}</td>
+                                    <td><strong>${user.username}</strong></td>
+                                    <td>
+                                        <span class="badge ${user.role === 'admin' ? 'badge-admin' : 'badge-user'}">
+                                            ${user.role === 'admin' ? '管理员' : '用户'}
+                                        </span>
+                                    </td>
+                                    <td>${user.email || '-'}</td>
+                                    <td>
+                                        <button class="btn btn-success" onclick="grantUserPermission(${user.user_id}, '${user.username}')" style="font-size: 0.8rem; white-space: nowrap;">
+                                            授予权限
+                                        </button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
             `;
 
             container.innerHTML = usersHTML;

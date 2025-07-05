@@ -399,6 +399,14 @@
             margin-top: 0.25rem;
         }
 
+        /* 表格水平滚动包装器 */
+        .table-wrapper {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            margin: 0 -2rem;
+            padding: 0 2rem;
+        }
+
         /* 响应式设计 */
         @media (max-width: 768px) {
             .container {
@@ -408,21 +416,79 @@
             .header {
                 padding: 1rem;
                 flex-direction: column;
-                gap: 1rem;
-                align-items: flex-start;
+                gap: 0.5rem;
+                align-items: stretch;
+            }
+
+            .header h1 {
+                font-size: 1.3rem;
+                margin-bottom: 0.5rem;
+                text-align: center;
+            }
+
+            .user-info {
+                flex-direction: column;
+                gap: 0.5rem;
+                align-items: center;
+                font-size: 0.85rem;
             }
 
             .nav-links {
                 flex-wrap: wrap;
+                justify-content: center;
+                gap: 0.5rem;
+            }
+
+            .nav-links a {
+                padding: 0.4rem 0.8rem;
+                font-size: 0.85rem;
+                border-radius: 6px;
+                background: rgba(255, 255, 255, 0.1);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+            }
+
+            .nav-links a:hover {
+                background: rgba(255, 255, 255, 0.2);
+            }
+
+            /* 移动端表格优化 */
+            .table-wrapper {
+                margin: 0 -1rem;
+                padding: 0 1rem;
             }
 
             .pgn-stats-table {
                 font-size: 0.8rem;
+                min-width: 900px; /* 确保表格有足够宽度显示所有列 */
             }
 
             .pgn-stats-table th,
             .pgn-stats-table td {
                 padding: 0.4rem 0.3rem;
+                min-width: 80px;
+            }
+
+            /* 操作按钮列固定 */
+            .pgn-stats-table th:last-child,
+            .pgn-stats-table td:last-child {
+                min-width: 120px;
+                position: sticky;
+                right: 0;
+                background: white;
+                border-left: 1px solid #dee2e6;
+                z-index: 10;
+            }
+
+            .pgn-stats-table th:last-child {
+                background: #f8f9fa;
+            }
+
+            .pgn-stats-table tbody tr:hover td:last-child {
+                background: #f8f9fa;
+            }
+
+            .pgn-stats-table tbody tr.expanded td:last-child {
+                background: #e3f2fd;
             }
 
             .progress-container {
@@ -447,15 +513,46 @@
         }
 
         @media (max-width: 480px) {
+            .header {
+                padding: 0.8rem;
+            }
+
+            .header h1 {
+                font-size: 1.2rem;
+            }
+
+            .user-info {
+                font-size: 0.8rem;
+            }
+
+            .nav-links {
+                gap: 0.3rem;
+            }
+
+            .nav-links a {
+                padding: 0.3rem 0.6rem;
+                font-size: 0.8rem;
+            }
+
             .modal-content {
                 padding: 1rem;
                 width: 95%;
+            }
+
+            .pgn-stats-table {
+                min-width: 800px;
             }
 
             .pgn-stats-table th,
             .pgn-stats-table td {
                 padding: 0.3rem 0.2rem;
                 font-size: 0.7rem;
+                min-width: 70px;
+            }
+
+            .pgn-stats-table th:last-child,
+            .pgn-stats-table td:last-child {
+                min-width: 100px;
             }
 
             .status-badge {
@@ -683,25 +780,27 @@
             const container = document.getElementById('pgnStatsContainer');
             
             const tableHTML = `
-                <table class="pgn-stats-table">
-                    <thead>
-                        <tr>
-                            <th width="3%"></th>
-                            <th width="22%">PGN文件名</th>
-                            <th width="9%">总分支数</th>
-                            <th width="11%">掌握度</th>
-                            <th width="8%">状态</th>
-                            <th width="8%">正确次数</th>
-                            <th width="8%">总尝试</th>
-                            <th width="8%">正确率</th>
-                            <th width="13%">最后练习</th>
-                            <th width="10%">操作</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${combinedData.map(pgn => renderCombinedPGNRow(pgn)).join('')}
-                    </tbody>
-                </table>
+                <div class="table-wrapper">
+                    <table class="pgn-stats-table">
+                        <thead>
+                            <tr>
+                                <th width="3%"></th>
+                                <th width="22%">PGN文件名</th>
+                                <th width="9%">总分支数</th>
+                                <th width="11%">掌握度</th>
+                                <th width="8%">状态</th>
+                                <th width="8%">正确次数</th>
+                                <th width="8%">总尝试</th>
+                                <th width="8%">正确率</th>
+                                <th width="13%">最后练习</th>
+                                <th width="10%">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${combinedData.map(pgn => renderCombinedPGNRow(pgn)).join('')}
+                        </tbody>
+                    </table>
+                </div>
             `;
 
             container.innerHTML = tableHTML;
@@ -844,44 +943,46 @@
                     <h4 style="margin: 0 0 0.5rem 0; color: #1565c0;">📚 选择PGN开始学习</h4>
                     <p style="margin: 0; color: #666; font-size: 0.9rem;">选择一个PGN文件开始您的国际象棋开局学习之旅</p>
                 </div>
-                <table class="pgn-stats-table">
-                    <thead>
-                        <tr>
-                            <th width="30%">PGN文件名</th>
-                            <th width="12%">总分支数</th>
-                            <th width="12%">游戏数</th>
-                            <th width="15%">上传时间</th>
-                            <th width="12%">文件大小</th>
-                            <th width="19%">操作</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${pgnList.map(pgn => `
+                <div class="table-wrapper">
+                    <table class="pgn-stats-table">
+                        <thead>
                             <tr>
-                                <td>
-                                    <strong>${pgn.filename}</strong>
-                                </td>
-                                <td>
-                                    <span class="badge status-learning">${pgn.total_branches}</span>
-                                </td>
-                                <td>
-                                    <span class="badge status-beginner">${pgn.total_games}</span>
-                                </td>
-                                <td>
-                                    <small>${formatDateTime(pgn.upload_time)}</small>
-                                </td>
-                                <td>
-                                    <small>${formatFileSize(pgn.file_size)}</small>
-                                </td>
-                                <td>
-                                    <button class="btn btn-primary btn-sm" onclick="startLearning(${pgn.id})" style="width: 100%;">
-                                        开始学习
-                                    </button>
-                                </td>
+                                <th width="30%">PGN文件名</th>
+                                <th width="12%">总分支数</th>
+                                <th width="12%">游戏数</th>
+                                <th width="15%">上传时间</th>
+                                <th width="12%">文件大小</th>
+                                <th width="19%">操作</th>
                             </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            ${pgnList.map(pgn => `
+                                <tr>
+                                    <td>
+                                        <strong>${pgn.filename}</strong>
+                                    </td>
+                                    <td>
+                                        <span class="badge status-learning">${pgn.total_branches}</span>
+                                    </td>
+                                    <td>
+                                        <span class="badge status-beginner">${pgn.total_games}</span>
+                                    </td>
+                                    <td>
+                                        <small>${formatDateTime(pgn.upload_time)}</small>
+                                    </td>
+                                    <td>
+                                        <small>${formatFileSize(pgn.file_size)}</small>
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-primary btn-sm" onclick="startLearning(${pgn.id})" style="width: 100%; white-space: nowrap;">
+                                            开始学习
+                                        </button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
             `;
 
             container.innerHTML = tableHTML;
