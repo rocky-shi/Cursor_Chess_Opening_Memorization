@@ -12,15 +12,22 @@ $(document).ready(function() {
                 // 在主容器显示后初始化棋盘
                 window.chessBoard.init();
                 
-                // 初始化API（检测后端连接和加载本地存储）
-                const hasStoredData = await window.chessAPI.init();
-                
-                // 检查URL参数，如果有pgn_id，加载特定的PGN数据
+                // 检查URL参数，如果有pgn_id，直接加载特定的PGN数据
                 const urlParams = new URLSearchParams(window.location.search);
                 const pgnId = urlParams.get('pgn_id');
+                
+                let hasStoredData = false;
+                
                 if (pgnId) {
-                    console.log('从URL参数加载PGN ID:', pgnId);
+                    console.log('检测到PGN ID参数，直接加载特定棋谱:', pgnId);
+                    // 只初始化API连接，不自动加载服务端最新棋谱
+                    await window.chessAPI.checkBackendConnection();
+                    // 加载特定的PGN数据
                     await loadPGNById(parseInt(pgnId));
+                    hasStoredData = true;
+                } else {
+                    // 没有PGN ID时，进行正常的初始化（包括自动加载服务端最新棋谱）
+                    hasStoredData = await window.chessAPI.init();
                 }
                 
                 // 移动端UI优化（按钮已移除，保留注释以备将来使用）
@@ -33,7 +40,7 @@ $(document).ready(function() {
                 
                 // 如果从本地存储恢复了数据，再次确保UI正确更新
                 if (hasStoredData && window.pgnParser) {
-                    console.log('检测到本地存储数据，确保UI正确更新');
+                    console.log('检测到数据，确保UI正确更新');
                     setTimeout(() => {
                         updateUI();
                         console.log('UI更新完成，当前状态:', {

@@ -811,6 +811,60 @@ def reset_progress():
     except Exception as e:
         return jsonify({'error': f'重置进度失败: {str(e)}'}), 500
 
+@app.route('/api/progress/hard-reset', methods=['POST'])
+@require_login
+def hard_reset_progress():
+    """彻底重置学习进度（删除所有进度记录和学习日志）"""
+    try:
+        data = request.get_json()
+        user_id = session['user_id']
+        pgn_game_id = data.get('pgn_game_id')
+        
+        if not pgn_game_id:
+            return jsonify({'error': 'PGN游戏ID不能为空'}), 400
+        
+        # 检查用户是否有访问此PGN的权限
+        if not check_pgn_permission(user_id, pgn_game_id):
+            return jsonify({'error': '您没有权限访问此PGN文件'}), 403
+        
+        with db_lock:
+            conn = sqlite3.connect(DATABASE_PATH)
+            cursor = conn.cursor()
+            
+            # 获取PGN文件名（用于日志）
+            cursor.execute('SELECT filename FROM pgn_games WHERE id = ?', (pgn_game_id,))
+            pgn_info = cursor.fetchone()
+            
+            if not pgn_info:
+                return jsonify({'error': 'PGN文件不存在'}), 404
+            
+            # 删除该用户在该PGN上的所有进度记录
+            cursor.execute('''
+                DELETE FROM user_progress 
+                WHERE user_id = ? AND pgn_game_id = ?
+            ''', (user_id, pgn_game_id))
+            
+            progress_deleted = cursor.rowcount
+            
+            # 删除该用户在该PGN上的所有学习日志
+            cursor.execute('''
+                DELETE FROM user_study_logs 
+                WHERE user_id = ? AND pgn_game_id = ?
+            ''', (user_id, pgn_game_id))
+            
+            logs_deleted = cursor.rowcount
+            
+            conn.commit()
+            conn.close()
+        
+        return jsonify({
+            'success': True,
+            'message': f'已彻底重置PGN "{pgn_info[0]}" 的所有进度，清理进度记录 {progress_deleted} 条，学习日志 {logs_deleted} 条'
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'彻底重置进度失败: {str(e)}'}), 500
+
 @app.route('/api/progress/current-stats/<int:pgn_id>', methods=['GET'])
 @require_login
 def get_current_stats(pgn_id):
@@ -2244,6 +2298,7 @@ if __name__ == '__main__':
     print("   GET  /api/progress/my     - 获取我的学习进度")
     print("   POST /api/progress/update - 更新学习进度")
     print("   POST /api/progress/reset  - 重置学习进度（保留已完成分支）")
+    print("   POST /api/progress/hard-reset  - 彻底重置学习进度（删除所有数据）")
     print("   GET  /api/progress/stats  - 获取学习统计")
     print("")
     print("📄 PGN文件API (需要登录):")

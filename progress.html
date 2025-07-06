@@ -307,6 +307,14 @@
             min-width: 70px;
         }
 
+        /* 操作按钮样式 */
+        .action-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 0.3rem;
+            min-width: 120px;
+        }
+
         /* 加载和空状态 */
         .loading {
             text-align: center;
@@ -498,7 +506,7 @@
             .action-buttons {
                 flex-direction: column;
                 gap: 0.2rem;
-                min-width: 90px;
+                min-width: 100px;
             }
 
             .btn {
@@ -897,8 +905,11 @@
                                 <button class="btn btn-primary btn-sm" onclick="startLearning(${pgn.pgn_id})" title="继续学习">
                                     继续学习
                                 </button>
-                                <button class="btn btn-danger btn-sm" onclick="resetPGNProgress(${pgn.pgn_id}, '${pgn.filename.replace(/'/g, '\\\'')}')" title="重置进度">
+                                <button class="btn btn-warning btn-sm" onclick="resetPGNProgress(${pgn.pgn_id}, '${pgn.filename.replace(/'/g, '\\\'')}')" title="重置进度">
                                     重置
+                                </button>
+                                <button class="btn btn-danger btn-sm" onclick="hardResetPGNProgress(${pgn.pgn_id}, '${pgn.filename.replace(/'/g, '\\\'')}')" title="彻底重置">
+                                    彻底重置
                                 </button>
                             </div>
                         </td>
@@ -1037,8 +1048,8 @@
                             <th width="8%">正确次数</th>
                             <th width="8%">总尝试</th>
                             <th width="8%">正确率</th>
-                            <th width="13%">最后练习</th>
-                            <th width="10%">操作</th>
+                            <th width="11%">最后练习</th>
+                            <th width="12%">操作</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -1095,6 +1106,9 @@
                             </button>
                             <button class="btn btn-warning btn-sm" onclick="resetPGNProgress(${pgn.pgn_id}, '${pgn.filename}')">
                                 重置进度
+                            </button>
+                            <button class="btn btn-danger btn-sm" onclick="hardResetPGNProgress(${pgn.pgn_id}, '${pgn.filename}')">
+                                彻底重置
                             </button>
                         </div>
                     </td>
@@ -1233,8 +1247,23 @@
             
             showModal(
                 '重置学习进度',
-                `确定要重置 "${filename}" 的所有学习进度吗？\n\n⚠️ 此操作将清除您在该PGN上的所有练习记录，包括正确次数、尝试次数和掌握度等数据。此操作不可撤销！`,
+                `确定要重置 "${filename}" 的学习进度吗？\n\n⚠️ 此操作将清除您在该PGN上未掌握分支的练习记录，但会保留已掌握分支的记录。此操作不可撤销！`,
                 '重置进度'
+            );
+        }
+
+        // 彻底重置PGN进度
+        function hardResetPGNProgress(pgnId, filename) {
+            currentAction = {
+                type: 'hard-reset',
+                pgnId: pgnId,
+                filename: filename
+            };
+            
+            showModal(
+                '彻底重置学习进度',
+                `⚠️ 危险操作确认\n\n确定要彻底重置 "${filename}" 的所有学习进度吗？\n\n此操作将：\n• 删除您在该PGN上的所有分支进度（包括已掌握的）\n• 删除所有相关的学习日志\n• 无法恢复任何数据\n\n此操作不可撤销！`,
+                '彻底重置'
             );
         }
 
@@ -1259,6 +1288,8 @@
             try {
                 if (currentAction.type === 'reset') {
                     await executeResetProgress(currentAction.pgnId);
+                } else if (currentAction.type === 'hard-reset') {
+                    await executeHardResetProgress(currentAction.pgnId);
                 }
             } catch (error) {
                 console.error('操作失败:', error);
@@ -1289,6 +1320,31 @@
             }
 
             alert('进度重置成功！');
+            // 重新加载数据
+            await loadPGNStats();
+        }
+
+        // 执行彻底重置进度
+        async function executeHardResetProgress(pgnId) {
+            const response = await fetch(`${API_BASE}/progress/hard-reset`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'include',
+                body: JSON.stringify({ pgn_game_id: pgnId })
+            });
+
+            if (!response.ok) {
+                throw new Error('彻底重置失败');
+            }
+
+            const result = await response.json();
+            if (!result.success) {
+                throw new Error(result.error || '彻底重置失败');
+            }
+
+            alert('彻底重置成功！');
             // 重新加载数据
             await loadPGNStats();
         }
