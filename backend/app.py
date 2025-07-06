@@ -524,32 +524,112 @@ def update_user(user_id):
 def delete_user(user_id):
     """删除用户"""
     try:
-        # 防止删除管理员自己
-        if session.get('user_id') == user_id:
-            return jsonify({'error': '不能删除自己的账号'}), 400
-        
         with db_lock:
             conn = sqlite3.connect(DATABASE_PATH)
             cursor = conn.cursor()
             
             # 检查用户是否存在
-            cursor.execute('SELECT id FROM users WHERE id = ?', (user_id,))
-            if not cursor.fetchone():
+            cursor.execute('SELECT username FROM users WHERE id = ?', (user_id,))
+            user = cursor.fetchone()
+            
+            if not user:
                 return jsonify({'error': '用户不存在'}), 404
             
-            # 删除用户相关数据
-            cursor.execute('DELETE FROM user_sessions WHERE user_id = ?', (user_id,))
-            cursor.execute('DELETE FROM user_progress WHERE user_id = ?', (user_id,))
-            cursor.execute('DELETE FROM user_study_logs WHERE user_id = ?', (user_id,))
+            # 删除用户（会级联删除相关记录）
             cursor.execute('DELETE FROM users WHERE id = ?', (user_id,))
             
             conn.commit()
             conn.close()
         
-        return jsonify({'success': True, 'message': '用户删除成功'})
+        return jsonify({
+            'success': True,
+            'message': f'用户 "{user[0]}" 删除成功'
+        })
         
     except Exception as e:
         return jsonify({'error': f'删除用户失败: {str(e)}'}), 500
+
+@app.route('/api/admin/users/<int:user_id>/progress', methods=['GET'])
+@require_admin
+def get_user_progress(user_id):
+    """获取特定用户的学习进度（包括授权情况）"""
+    try:
+        with db_lock:
+            conn = sqlite3.connect(DATABASE_PATH)
+            cursor = conn.cursor()
+            
+            # 检查用户是否存在
+            cursor.execute('SELECT username FROM users WHERE id = ?', (user_id,))
+            user_info = cursor.fetchone()
+            
+            if not user_info:
+                return jsonify({'error': '用户不存在'}), 404
+            
+            username = user_info[0]
+            
+            # 获取所有PGN文件，以及该用户的授权情况和学习进度
+            cursor.execute('''
+                SELECT 
+                    pg.id as pgn_id,
+                    pg.filename,
+                    pg.total_branches,
+                    pg.upload_time,
+                    CASE WHEN p.user_id IS NOT NULL THEN 1 ELSE 0 END as has_permission,
+                    COALESCE(COUNT(up.id), 0) as practiced_branches,
+                    COALESCE(SUM(CASE WHEN up.is_completed = 1 THEN 1 ELSE 0 END), 0) as completed_branches,
+                    COALESCE(SUM(CASE WHEN up.is_completed = 1 AND up.correct_count > 0 AND up.total_attempts > 0 AND (up.correct_count * 1.0 / up.total_attempts) = 1.0 THEN 1 ELSE 0 END), 0) as mastered_branches,
+                    COALESCE(SUM(up.correct_count), 0) as total_correct,
+                    COALESCE(SUM(up.total_attempts), 0) as total_attempts,
+                    MAX(up.last_attempt_at) as last_practice_time,
+                    CASE WHEN COUNT(up.id) > 0 THEN 1 ELSE 0 END as has_progress
+                FROM pgn_games pg
+                LEFT JOIN pgn_permissions p ON pg.id = p.pgn_id AND p.user_id = ?
+                LEFT JOIN user_progress up ON pg.id = up.pgn_game_id AND up.user_id = ?
+                GROUP BY pg.id, pg.filename, pg.total_branches, pg.upload_time, p.user_id
+                ORDER BY pg.upload_time DESC
+            ''', (user_id, user_id))
+            
+            rows = cursor.fetchall()
+            conn.close()
+        
+        result = []
+        for row in rows:
+            pgn_id, filename, total_branches, upload_time, has_permission, practiced_branches, completed_branches, mastered_branches, total_correct, total_attempts, last_practice_time, has_progress = row
+            
+            # 计算掌握度和正确率
+            mastery_rate = (mastered_branches / total_branches * 100) if total_branches > 0 else 0
+            accuracy_rate = (total_correct / total_attempts * 100) if total_attempts > 0 else 0
+            
+            result.append({
+                'pgn_id': pgn_id,
+                'user_id': user_id,
+                'username': username,
+                'filename': filename,
+                'total_branches': total_branches,
+                'practiced_branches': practiced_branches,
+                'completed_branches': completed_branches,
+                'mastered_branches': mastered_branches,
+                'mastery_rate': round(mastery_rate, 1),
+                'total_correct': total_correct,
+                'total_attempts': total_attempts,
+                'accuracy_rate': round(accuracy_rate, 1),
+                'last_practice_time': last_practice_time,
+                'upload_time': upload_time,
+                'has_permission': bool(has_permission),
+                'has_progress': bool(has_progress)
+            })
+        
+        return jsonify({
+            'success': True,
+            'data': result,
+            'user_info': {
+                'user_id': user_id,
+                'username': username
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'获取用户学习进度失败: {str(e)}'}), 500
 
 # 用户进度相关API
 @app.route('/api/progress/my', methods=['GET'])
@@ -2293,6 +2373,7 @@ if __name__ == '__main__':
     print("   POST   /api/admin/users        - 创建新用户")
     print("   PUT    /api/admin/users/<id>   - 更新用户信息")
     print("   DELETE /api/admin/users/<id>   - 删除用户")
+    print("   GET    /api/admin/users/<id>/progress - 获取用户学习进度")
     print("")
     print("📚 学习进度API (需要登录):")
     print("   GET  /api/progress/my     - 获取我的学习进度")

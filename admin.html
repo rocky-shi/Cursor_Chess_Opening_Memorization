@@ -299,6 +299,27 @@
             border: 1px solid #f5c6cb;
         }
 
+        /* 徽章样式 */
+        .badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-align: center;
+            min-width: 60px;
+            display: inline-block;
+        }
+
+        .badge-success {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .badge-danger {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
         .loading {
             text-align: center;
             padding: 2rem;
@@ -858,6 +879,24 @@
         </div>
     </div>
 
+    <!-- 用户学习进度模态框 -->
+    <div id="userProgressModal" class="modal">
+        <div class="modal-content extra-large-modal">
+            <div class="modal-header">
+                <h3 id="userProgressModalTitle">用户学习进度</h3>
+                <span class="close" onclick="closeUserProgressModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="userProgressAlertContainer"></div>
+                <div class="table-wrapper">
+                    <div id="userProgressTableContainer">
+                        <div class="loading">正在加载用户学习进度数据...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         // 动态获取API基础地址
         function getApiBase() {
@@ -1021,7 +1060,8 @@
                                     <td>${user.last_login ? formatDateTime(user.last_login) : '-'}</td>
                                     <td>${formatDateTime(user.created_at)}</td>
                                     <td>
-                                        <div class="action-buttons-container">
+                                        <div class="action-buttons-container three-buttons">
+                                            <button class="btn btn-primary btn-action" onclick="viewUserProgress(${user.id}, '${user.username}')">查看进度</button>
                                             <button class="btn btn-warning btn-action" onclick="editUser(${user.id})">编辑</button>
                                             ${user.id !== currentUser.id ? `<button class="btn btn-danger btn-action" onclick="deleteUser(${user.id}, '${user.username}')">删除</button>` : ''}
                                         </div>
@@ -1178,6 +1218,168 @@
             if (!dateString) return '-';
             const date = new Date(dateString);
             return date.toLocaleString('zh-CN');
+        }
+
+        // ================ 用户学习进度相关函数 ================
+
+        // 查看用户学习进度
+        async function viewUserProgress(userId, username) {
+            document.getElementById('userProgressModalTitle').textContent = `${username} - 学习进度`;
+            document.getElementById('userProgressModal').style.display = 'block';
+            document.getElementById('userProgressAlertContainer').innerHTML = '';
+            
+            // 重置容器
+            document.getElementById('userProgressTableContainer').innerHTML = '<div class="loading">正在加载用户学习进度数据...</div>';
+            
+            await loadUserProgress(userId);
+        }
+
+        // 关闭用户学习进度模态框
+        function closeUserProgressModal() {
+            document.getElementById('userProgressModal').style.display = 'none';
+        }
+
+        // 加载用户学习进度数据
+        async function loadUserProgress(userId) {
+            try {
+                const response = await fetch(`${API_BASE}/admin/users/${userId}/progress`, {
+                    credentials: 'include'
+                });
+
+                if (!response.ok) {
+                    throw new Error('获取用户学习进度失败');
+                }
+
+                const result = await response.json();
+                if (!result.success) {
+                    throw new Error(result.error || '获取用户学习进度失败');
+                }
+
+                renderUserProgressTable(result.data);
+            } catch (error) {
+                console.error('加载用户学习进度失败:', error);
+                showUserProgressAlert('加载用户学习进度失败: ' + error.message, 'danger');
+            }
+        }
+
+        // 渲染用户学习进度表格
+        function renderUserProgressTable(progressData) {
+            const container = document.getElementById('userProgressTableContainer');
+            
+            if (!progressData || progressData.length === 0) {
+                container.innerHTML = '<div class="empty-state">该用户还没有学习记录</div>';
+                return;
+            }
+
+            const tableHTML = `
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>PGN文件名</th>
+                            <th>授权状态</th>
+                            <th>总分支数</th>
+                            <th>已练习</th>
+                            <th>已完成</th>
+                            <th>已掌握</th>
+                            <th>掌握度</th>
+                            <th>正确次数</th>
+                            <th>总尝试</th>
+                            <th>正确率</th>
+                            <th>最后练习</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${progressData.map(pgn => `
+                            <tr>
+                                <td><strong>${pgn.filename}</strong></td>
+                                <td>
+                                    <span class="badge ${pgn.has_permission ? 'badge-success' : 'badge-danger'}">
+                                        ${pgn.has_permission ? '已授权' : '未授权'}
+                                    </span>
+                                </td>
+                                <td>${pgn.total_branches}</td>
+                                <td>${pgn.practiced_branches || 0}</td>
+                                <td>${pgn.completed_branches || 0}</td>
+                                <td>${pgn.mastered_branches || 0}</td>
+                                <td>
+                                    <div class="progress-container" style="width: 80px; height: 16px; background: #e9ecef; border-radius: 8px; overflow: hidden; display: inline-block;">
+                                        <div style="height: 100%; background: linear-gradient(90deg, #28a745, #20c997); width: ${pgn.mastery_rate || 0}%;"></div>
+                                    </div>
+                                    <span style="font-size: 0.8rem; font-weight: 600; margin-left: 0.4rem;">${pgn.mastery_rate || 0}%</span>
+                                </td>
+                                <td>${pgn.total_correct || 0}</td>
+                                <td>${pgn.total_attempts || 0}</td>
+                                <td><strong>${pgn.accuracy_rate || 0}%</strong></td>
+                                <td><small>${pgn.last_practice_time ? formatDateTime(pgn.last_practice_time) : '-'}</small></td>
+                                <td>
+                                    <div class="action-buttons-container">
+                                        ${!pgn.has_permission ? 
+                                            `<button class="btn btn-success btn-action" onclick="grantUserPGNPermission(${pgn.user_id}, ${pgn.pgn_id}, '${pgn.filename}')">授权</button>` : 
+                                            ''
+                                        }
+                                        ${pgn.has_progress ? 
+                                            `<button class="btn btn-warning btn-action" onclick="adminResetUserProgress(${pgn.pgn_id}, ${pgn.user_id}, '${pgn.username}', '${pgn.filename}')">重置</button>` : 
+                                            ''
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+
+            container.innerHTML = tableHTML;
+        }
+
+
+
+        // 为用户授权PGN
+        async function grantUserPGNPermission(userId, pgnId, filename) {
+            if (!confirm(`确定要为用户授权PGN "${filename}" 吗？`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE}/admin/pgn/${pgnId}/permissions`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        user_id: userId
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.success) {
+                    showUserProgressAlert(result.message || '授权成功', 'success');
+                    // 重新加载用户进度数据
+                    await loadUserProgress(userId);
+                } else {
+                    showUserProgressAlert(result.error || '授权失败', 'danger');
+                }
+            } catch (error) {
+                showUserProgressAlert('网络错误: ' + error.message, 'danger');
+                console.error('授权失败:', error);
+            }
+        }
+
+        // 显示用户进度相关提示信息
+        function showUserProgressAlert(message, type = 'danger') {
+            document.getElementById('userProgressAlertContainer').innerHTML = `
+                <div class="alert alert-${type}">
+                    ${message}
+                </div>
+            `;
+            
+            // 5秒后自动清除
+            setTimeout(() => {
+                document.getElementById('userProgressAlertContainer').innerHTML = '';
+            }, 5000);
         }
 
         // ================ PGN管理相关函数 ================
