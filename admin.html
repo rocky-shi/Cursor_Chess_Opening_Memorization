@@ -1768,11 +1768,15 @@
 
         // 管理员彻底重置用户进度
         async function adminResetUserProgress(pgnId, userId, username, pgnFilename) {
-            if (!confirm(`⚠️ 危险操作确认\n\n确定要彻底重置用户 "${username}" 在PGN "${pgnFilename}" 上的所有学习进度吗？\n\n此操作将：\n• 删除该用户的所有分支进度（包括已掌握的）\n• 删除所有相关的学习日志\n• 无法恢复任何数据\n\n此操作不可撤销！`)) {
+            if (!confirm(`⚠️ 危险操作确认\n\n确定要彻底重置用户 "${username}" 在PGN "${pgnFilename}" 上的所有学习进度吗？\n\n此操作将：\n• 删除该用户的所有分支进度（包括已掌握的）\n• 删除所有相关的学习日志\n• 删除所有记忆学习进度\n• 无法恢复任何数据\n\n此操作不可撤销！`)) {
                 return;
             }
 
             try {
+                // 注意：记忆学习进度主要存储在前端localStorage中
+                // 管理员无法直接清理用户的localStorage，但可以提示用户
+                // 这里只处理后端的背诵学习进度
+                
                 const response = await fetch(`${API_BASE}/admin/pgn/${pgnId}/users/${userId}/reset`, {
                     method: 'POST',
                     credentials: 'include'
@@ -1781,11 +1785,19 @@
                 const result = await response.json();
 
                 if (response.ok && result.success) {
-                    showPGNUsersAlert(result.message || '用户进度重置成功', 'success');
+                    const message = result.message + '\n\n⚠️ 重要提醒：记忆学习进度存储在前端localStorage中，管理员无法直接清理。\n\n建议用户：\n1. 在前端页面点击"彻底重置"按钮\n2. 或者手动清理浏览器localStorage\n3. 或者清除浏览器数据';
+                    
+                    showPGNUsersAlert(message, 'warning');
+                    
+                    // 显示详细的清理说明
+                    setTimeout(() => {
+                        showMemoryLearningCleanupInstructions(pgnId, pgnFilename);
+                    }, 2000);
+                    
                     // 重新加载用户进度数据
                     setTimeout(() => {
                         viewPGNUsers(pgnId, pgnFilename);
-                    }, 1500);
+                    }, 5000);
                 } else {
                     showPGNUsersAlert(result.error || '重置失败', 'danger');
                 }
@@ -1793,6 +1805,59 @@
                 showPGNUsersAlert('网络错误: ' + error.message, 'danger');
                 console.error('重置用户进度失败:', error);
             }
+        }
+        
+        // 显示记忆学习进度清理说明
+        function showMemoryLearningCleanupInstructions(pgnId, pgnFilename) {
+            const instructions = `
+                <div class="alert alert-info">
+                    <h5>📋 记忆学习进度清理说明</h5>
+                    <p><strong>PGN文件：</strong>${pgnFilename}</p>
+                    <p><strong>问题：</strong>记忆学习进度存储在前端localStorage中，管理员无法直接清理</p>
+                    <p><strong>解决方案：</strong></p>
+                    <ol>
+                        <li><strong>用户自行清理：</strong>让用户在前端页面点击"彻底重置"按钮</li>
+                        <li><strong>手动清理localStorage：</strong>用户可以在浏览器开发者工具中手动删除</li>
+                        <li><strong>清除浏览器数据：</strong>清除该网站的localStorage数据</li>
+                    </ol>
+                    <p><strong>localStorage键名：</strong><code>memory_learning_${pgnFilename}</code></p>
+                    <button class="btn btn-sm btn-outline-info" onclick="copyCleanupInstructions('${pgnFilename}')">
+                        📋 复制清理说明
+                    </button>
+                </div>
+            `;
+            
+            showPGNUsersAlert(instructions, 'info');
+        }
+        
+        // 复制清理说明到剪贴板
+        function copyCleanupInstructions(pgnFilename) {
+            const instructions = `
+记忆学习进度清理说明：
+
+PGN文件：${pgnFilename}
+
+问题：记忆学习进度存储在前端localStorage中，管理员无法直接清理
+
+解决方案：
+1. 用户自行清理：让用户在前端页面点击"彻底重置"按钮
+2. 手动清理localStorage：用户可以在浏览器开发者工具中手动删除
+3. 清除浏览器数据：清除该网站的localStorage数据
+
+localStorage键名：memory_learning_${pgnFilename}
+
+清理步骤：
+1. 打开浏览器开发者工具（F12）
+2. 切换到Application/Storage标签
+3. 找到Local Storage
+4. 删除键名为"memory_learning_${pgnFilename}"的项
+            `;
+            
+            navigator.clipboard.writeText(instructions).then(() => {
+                showPGNUsersAlert('清理说明已复制到剪贴板', 'success');
+            }).catch(() => {
+                showPGNUsersAlert('复制失败，请手动复制', 'warning');
+            });
         }
 
         // 显示PGN用户相关提示信息

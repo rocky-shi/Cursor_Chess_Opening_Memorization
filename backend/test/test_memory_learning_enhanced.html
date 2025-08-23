@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>增强记忆学习功能测试</title>
+    <style>
+        body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .test-section {
+            background: white;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin: 5px 0;
+            font-weight: bold;
+        }
+        .status.success { background: #d4edda; color: #155724; }
+        .status.warning { background: #fff3cd; color: #856404; }
+        .status.info { background: #d1ecf1; color: #0c5460; }
+        .status.error { background: #f8d7da; color: #721c24; }
+        .btn {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-success { background: #28a745; color: white; }
+        .btn-warning { background: #ffc107; color: #212529; }
+        .feature-list {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .feature-list ul {
+            margin: 5px 0;
+            padding-left: 20px;
+        }
+        .feature-list li {
+            margin: 3px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧠 增强记忆学习功能测试</h1>
+    
+    <div class="test-section">
+        <h2>🔧 新增功能说明</h2>
+        <div class="feature-list">
+            <h3>✅ 已实现的功能：</h3>
+            <ul>
+                <li><strong>分支名称显示</strong>：记忆学习时展示所有分支名称</li>
+                <li><strong>分支状态标记</strong>：
+                    <ul>
+                        <li>✅ 完美完成（无错误）</li>
+                        <li>⏸️ 暂停状态（有错误但完成）</li>
+                        <li>⏳ 待学习状态</li>
+                    </ul>
+                </li>
+                <li><strong>智能重置逻辑</strong>：
+                    <ul>
+                        <li>记忆学习模式：重置暂停的分支</li>
+                        <li>背谱模式：重置未完成的分支</li>
+                    </ul>
+                </li>
+                <li><strong>自动分支切换</strong>：完成一个分支后自动准备下一个分支</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>🧪 测试步骤</h2>
+        <ol>
+            <li><strong>启动后端服务</strong></li>
+            <li><strong>访问主页面</strong> (index.html)</li>
+            <li><strong>登录系统并加载PGN文件</strong></li>
+            <li><strong>点击"🧠 记忆学习"按钮</strong></li>
+            <li><strong>观察分支名称显示</strong>：应该看到所有分支名称和状态</li>
+            <li><strong>按照棋谱走棋</strong>：
+                <ul>
+                    <li>走对：观察电脑自动走棋和下一步高亮</li>
+                    <li>走错：观察错误提示和错误计数</li>
+                </ul>
+            </li>
+            <li><strong>完成分支测试</strong>：
+                <ul>
+                    <li>无错误完成：应该标记为✅</li>
+                    <li>有错误完成：应该标记为⏸️</li>
+                </ul>
+            </li>
+            <li><strong>测试重置功能</strong>：
+                <ul>
+                    <li>记忆学习模式下点击"重置进度"：应该重置暂停的分支</li>
+                    <li>背谱模式下点击"重置进度"：应该重置未完成的分支</li>
+                </ul>
+            </li>
+        </ol>
+    </div>
+
+    <div class="test-section">
+        <h2>📋 预期行为</h2>
+        <div class="status success">
+            <strong>分支名称显示：</strong>
+            <ul>
+                <li>启动记忆学习后，右侧面板显示所有分支名称</li>
+                <li>每个分支显示名称和当前状态图标</li>
+                <li>状态图标根据完成情况动态更新</li>
+            </ul>
+        </div>
+        
+        <div class="status info">
+            <strong>分支状态管理：</strong>
+            <ul>
+                <li>✅ 绿色：完美完成的分支</li>
+                <li>⏸️ 黄色：有错误但完成的分支（暂停状态）</li>
+                <li>⏳ 灰色：待学习的分支</li>
+            </ul>
+        </div>
+        
+        <div class="status warning">
+            <strong>重置逻辑：</strong>
+            <ul>
+                <li>记忆学习模式：重置暂停的分支，保留完美完成的分支</li>
+                <li>背谱模式：重置未完成的分支，保留已完成的分支</li>
+                <li>彻底重置：清除所有进度（包括记忆学习进度）</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>🐛 调试信息</h2>
+        <div class="status warning">
+            <strong>请查看浏览器控制台:</strong>
+            <ul>
+                <li>分支名称显示过程</li>
+                <li>分支状态更新信息</li>
+                <li>错误计数和分支完成信息</li>
+                <li>重置操作执行信息</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="test-section">
+        <h2>⚠️ 注意事项</h2>
+        <div class="status error">
+            <ul>
+                <li>确保PGN文件包含多个分支</li>
+                <li>测试时观察分支状态图标的动态变化</li>
+                <li>验证重置功能在不同模式下的行为差异</li>
+                <li>检查分支完成后的自动切换是否正常</li>
+            </ul>
+        </div>
+    </div>
+
+    <div style="text-align: center; margin: 30px 0;">
+        <a href="index.html" class="btn btn-primary">🏠 返回主页面测试</a>
+        <a href="progress.html" class="btn btn-success">📊 查看学习进度</a>
+        <a href="admin.html" class="btn btn-warning">⚙️ 管理员页面</a>
+    </div>
+
+    <script>
+        console.log('🧠 增强记忆学习功能测试页面已加载');
+        console.log('请按照测试步骤进行功能验证');
+        console.log('新功能包括：分支名称显示、状态标记、智能重置逻辑等');
+    </script>
+</body>
+</html> 

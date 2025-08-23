@@ -169,12 +169,37 @@
             background: linear-gradient(145deg, #2196F3, #1976D2);
         }
         
+        button#setupLearning {
+            background: linear-gradient(145deg, #9C27B0, #7B1FA2);
+        }
+        
+        button#memoryLearning {
+            background: linear-gradient(145deg, #FF5722, #E64A19);
+        }
+        
         button#resetPosition {
             background: linear-gradient(145deg, #FF9800, #F57C00);
         }
         
         button#resetAll {
             background: linear-gradient(145deg, #f44336, #d32f2f);
+        }
+        
+        button#hardResetAll {
+            background-color: #dc3545;
+            color: white;
+            border: 2px solid #dc3545;
+            transition: all 0.3s ease;
+        }
+        
+        button#hardResetAll:hover {
+            background-color: #c82333;
+            border-color: #c82333;
+            transform: scale(1.05);
+        }
+        
+        button#hardResetAll:active {
+            transform: scale(0.95);
         }
         
         /* 颜色选择 */
@@ -479,6 +504,83 @@
             .right-panel {
                 order: -1;
             }
+            
+            /* 移动端棋谱显示优化 */
+            .right-panel {
+                max-height: 60vh;
+                overflow-y: auto;
+            }
+            
+            /* 确保棋谱在移动端有足够的显示空间 */
+            #moveHistory {
+                max-height: 50vh;
+                overflow-y: auto;
+                padding: 10px;
+            }
+            
+            /* 移动端分支显示优化 */
+            #moveHistory .chess-move {
+                font-size: 14px;
+                padding: 3px 6px;
+                margin: 2px;
+                display: inline-block;
+                min-width: 40px;
+                text-align: center;
+            }
+            
+            /* 移动端分支容器优化 */
+            #moveHistory [id^="branch-"] {
+                margin-bottom: 8px;
+                padding: 6px;
+                font-size: 13px;
+            }
+        }
+        
+        /* 小屏幕移动端优化 */
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+                gap: 15px;
+            }
+            
+            .board-container {
+                padding: 15px;
+                max-width: 100%;
+            }
+            
+            #board {
+                max-width: 100%;
+            }
+            
+            .right-panel {
+                max-height: 50vh;
+                padding: 15px;
+            }
+            
+            #moveHistory {
+                max-height: 40vh;
+                font-size: 12px;
+            }
+            
+            /* 移动端棋谱标题优化 */
+            #moveHistory strong {
+                font-size: 14px;
+                display: block;
+                margin-bottom: 8px;
+            }
+            
+            /* 移动端分支信息优化 */
+            #moveHistory [id^="branch-"] {
+                font-size: 12px;
+                line-height: 1.4;
+            }
+            
+            /* 移动端摆棋学习信息优化 */
+            #moveHistory div[style*="background: #e3f2fd"] {
+                font-size: 12px;
+                padding: 8px;
+                margin-top: 10px;
+            }
         }
         
         /* 原有的移动端样式已整合到上面的新媒体查询中 */
@@ -668,6 +770,14 @@
             #startStudy {
                 font-size: 10px;
             }
+            
+            #setupLearning {
+                font-size: 9px;
+            }
+            
+            #memoryLearning {
+                font-size: 9px;
+            }
 
             #resetPosition {
                 font-size: 9px;
@@ -852,8 +962,11 @@
             </div>
             <div class="button-group">
                 <button id="startStudy" disabled>🎯 开始背谱</button>
+                <button id="setupLearning" disabled>📚 摆棋学习</button>
+                <button id="memoryLearning" disabled>🧠 记忆学习</button>
                 <button id="resetPosition">🔄 回到初始位置</button>
                 <button id="resetAll">🔄 重置进度</button>
+                <button id="hardResetAll">🗑️ 彻底重置</button>
             </div>
             <div class="color-selection">
                 <label>
@@ -877,6 +990,7 @@
                 <div class="completion-banner" id="completionBanner">
                     🎉 恭喜！您已背完所有分支！
                 </div>
+                <div class="branch-names" id="branchNames" style="display: none;"></div>
                 <div class="move-history" id="moveHistory"></div>
             </div>
         </div>

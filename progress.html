@@ -1262,7 +1262,7 @@
             
             showModal(
                 '彻底重置学习进度',
-                `⚠️ 危险操作确认\n\n确定要彻底重置 "${filename}" 的所有学习进度吗？\n\n此操作将：\n• 删除您在该PGN上的所有分支进度（包括已掌握的）\n• 删除所有相关的学习日志\n• 无法恢复任何数据\n\n此操作不可撤销！`,
+                `⚠️ 危险操作确认\n\n确定要彻底重置 "${filename}" 的所有学习进度吗？\n\n此操作将：\n• 删除您在该PGN上的所有分支进度（包括已掌握的）\n• 删除所有相关的学习日志\n• 删除所有记忆学习进度\n• 无法恢复任何数据\n\n此操作不可撤销！`,
                 '彻底重置'
             );
         }
@@ -1326,27 +1326,83 @@
 
         // 执行彻底重置进度
         async function executeHardResetProgress(pgnId) {
-            const response = await fetch(`${API_BASE}/progress/hard-reset`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                credentials: 'include',
-                body: JSON.stringify({ pgn_game_id: pgnId })
-            });
+            try {
+                // 首先清理前端的记忆学习进度
+                clearMemoryLearningProgress(pgnId);
+                
+                // 然后调用后端API重置背诵学习进度
+                const response = await fetch(`${API_BASE}/progress/hard-reset-all`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({ pgn_game_id: pgnId })
+                });
 
-            if (!response.ok) {
-                throw new Error('彻底重置失败');
+                if (!response.ok) {
+                    throw new Error('彻底重置失败');
+                }
+
+                const result = await response.json();
+                if (!result.success) {
+                    throw new Error(result.error || '彻底重置失败');
+                }
+
+                alert('彻底重置成功！包括背诵学习和记忆学习的所有进度都已清理。');
+                // 重新加载数据
+                await loadPGNStats();
+            } catch (error) {
+                console.error('彻底重置失败:', error);
+                alert('彻底重置失败: ' + error.message);
             }
-
-            const result = await response.json();
-            if (!result.success) {
-                throw new Error(result.error || '彻底重置失败');
+        }
+        
+        // 清理记忆学习进度
+        function clearMemoryLearningProgress(pgnId) {
+            try {
+                // 获取PGN文件名作为存储键的一部分
+                const pgnFilename = getPGNFilenameById(pgnId);
+                if (pgnFilename) {
+                    const storageKey = `memory_learning_${pgnFilename}`;
+                    localStorage.removeItem(storageKey);
+                    console.log(`已清理记忆学习进度: ${storageKey}`);
+                }
+                
+                // 同时尝试使用PGN ID作为存储键（兼容性）
+                const storageKeyById = `memory_learning_${pgnId}`;
+                localStorage.removeItem(storageKeyById);
+                console.log(`已清理记忆学习进度: ${storageKeyById}`);
+                
+                // 清理所有可能的记忆学习进度存储
+                const allKeys = Object.keys(localStorage);
+                const memoryLearningKeys = allKeys.filter(key => 
+                    key.startsWith('memory_learning_') && 
+                    (key.includes(pgnFilename) || key.includes(pgnId.toString()))
+                );
+                
+                memoryLearningKeys.forEach(key => {
+                    localStorage.removeItem(key);
+                    console.log(`已清理记忆学习进度: ${key}`);
+                });
+                
+                console.log(`总共清理了 ${memoryLearningKeys.length} 个记忆学习进度存储项`);
+            } catch (error) {
+                console.error('清理记忆学习进度失败:', error);
             }
-
-            alert('彻底重置成功！');
-            // 重新加载数据
-            await loadPGNStats();
+        }
+        
+        // 根据PGN ID获取文件名
+        function getPGNFilenameById(pgnId) {
+            // 从当前加载的PGN统计中查找
+            if (window.currentPGNStats && window.currentPGNStats.pgn_stats) {
+                for (const stat of window.currentPGNStats.pgn_stats) {
+                    if (stat.pgn_id === pgnId) {
+                        return stat.filename;
+                    }
+                }
+            }
+            return null;
         }
 
         // 登出

@@ -5,18 +5,35 @@ class ChessBoard {
         this.orientation = 'white';
         this.currentBranch = null;
         this.completedBranches = new Set();
+        this.pausedBranches = new Set(); // 暂停的分支
+        this.branchErrorCounts = new Map(); // 每个分支的错误计数
         this.turnIndicator = null;
         this.availableBranches = []; // 当前可用的分支
         this.isStudyMode = false; // 是否在背谱模式
+        this.isSetupLearningMode = false; // 是否在摆棋学习模式
+        this.isMemoryLearningMode = false; // 是否在记忆学习模式
         this.computerUsedBranches = new Set(); // 电脑已使用过的分支（用于白方第一步）
         this.errorCount = 0; // 错误计数器
         this.errorThreshold = 5; // 错误阈值，5次后提示正确走法
         this.correctMoves = 0; // 正确步数
         this.totalMoves = 0; // 总步数（已走步数）
+        this.memoryCorrectMoves = 0; // 记忆学习模式的正确步数
+        this.memoryTotalMoves = 0;   // 记忆学习模式的总步数
+        this.accuracy = 0;
         
         // 点击移动相关属性
         this.selectedSquare = null; // 当前选中的方格
         this.clickToMove = true; // 是否启用点击移动
+        
+        // 分支状态管理
+        this.memoryCompletedBranches = new Set(); // 记忆学习已完成的分支
+        this.memoryPausedBranches = new Set();    // 记忆学习暂停的分支
+        
+        // 摆棋学习模式的分支过滤管理
+        this.setupLearningHiddenBranches = new Set(); // 摆棋学习中已隐藏的分支
+        
+        // 分支错误计数
+        this.memoryBranchErrorCounts = new Map(); // 记忆学习分支错误计数
     }
 
     init() {
@@ -164,13 +181,23 @@ class ChessBoard {
         console.log('Legal move:', move);
 
         // 清除高亮状态（有棋子移动了）
-        this.clearHighlights();
+        this.clearHighlightsNew();
 
-        // 如果不在背谱模式，允许自由下棋
-        if (!this.isStudyMode) {
+        // 如果不在任何学习模式，允许自由下棋
+        if (!this.isStudyMode && !this.isSetupLearningMode && !this.isMemoryLearningMode) {
             this.updateMoveHistory(move);
             this.updateTurnIndicator();
             return;
+        }
+
+        // 摆棋学习模式
+        if (this.isSetupLearningMode) {
+            return this.handleSetupLearningMove(move);
+        }
+
+        // 记忆学习模式
+        if (this.isMemoryLearningMode) {
+            return this.handleMemoryLearningMove(move);
         }
 
         // 背谱模式下检查移动是否正确
@@ -223,6 +250,221 @@ class ChessBoard {
         setTimeout(() => this.makeComputerMove(), 500);
     }
 
+    // 处理摆棋学习模式的移动
+    handleSetupLearningMove(move) {
+        if (!this.isSetupLearningMode) {
+            return;
+        }
+        
+        console.log('摆棋学习模式：处理用户移动:', move);
+        
+        // 检查这个移动是否在任何分支中
+        const currentHistory = this.game.history();
+        const moveIndex = currentHistory.length - 1; // 当前移动的索引
+        const currentMove = currentHistory[moveIndex];
+        
+        let matchingBranches = [];
+        let hiddenBranches = [];
+        
+        // 检查所有分支
+        for (let i = 0; i < window.pgnParser.branches.length; i++) {
+            const branch = window.pgnParser.branches[i];
+            const branchId = branch.id || `branch_${i}`;
+            
+            // 跳过已经隐藏的分支
+            if (this.setupLearningHiddenBranches.has(branchId)) {
+                continue;
+            }
+            
+            // 检查历史是否匹配
+            let isMatch = true;
+            for (let j = 0; j < currentHistory.length; j++) {
+                if (j >= branch.moves.length || branch.moves[j] !== currentHistory[j]) {
+                    isMatch = false;
+                    break;
+                }
+            }
+            
+            if (isMatch) {
+                // 这个分支仍然匹配
+                matchingBranches.push(branch);
+            } else {
+                // 这个分支不匹配，需要隐藏
+                hiddenBranches.push(branch);
+                this.setupLearningHiddenBranches.add(branchId);
+                console.log(`摆棋学习：隐藏不匹配的分支 ${i + 1}: ${branch.moves.join(' ')}`);
+            }
+        }
+        
+        if (matchingBranches.length === 0) {
+            // 没有匹配的分支，显示错误提示
+            $('#errorToast').text('您走的招法不在本棋谱中').css('background', '#ff4444').fadeIn().delay(3000).fadeOut().promise().done(() => {
+                $('#errorToast').css('background', '#ff4444');
+            });
+            
+            // 撤销移动
+            this.game.undo();
+            if (this.board) {
+                this.board.position(this.game.fen());
+            }
+            return;
+        }
+        
+        // 有匹配的分支，继续正常流程
+        console.log(`摆棋学习：找到 ${matchingBranches.length} 个匹配分支，隐藏了 ${hiddenBranches.length} 个不匹配分支`);
+        
+        // 更新可用分支列表
+        this.availableBranches = matchingBranches;
+        
+        // 更新UI显示
+        this.updateMoveHistory(move);
+        this.updateTurnIndicator();
+        
+        // 更新棋谱显示，高亮当前走法
+        this.updateSetupLearningNotation();
+        
+        // 检查是否有分支完成
+        if (this.isCurrentBranchCompleted()) {
+            this.onSetupLearningBranchCompleted();
+        }
+    }
+
+    // 获取下一步可以走的招法
+    getNextPossibleMoves() {
+        if (!window.pgnParser || !window.pgnParser.branches) {
+            return [];
+        }
+
+        const currentHistory = this.game.history();
+        const nextMoves = new Set();
+        
+        // 在所有分支中查找下一步可能的招法
+        for (const branch of window.pgnParser.branches) {
+            // 检查当前历史是否与分支的前几步匹配
+            let isMatch = true;
+            for (let i = 0; i < currentHistory.length; i++) {
+                if (i >= branch.moves.length || branch.moves[i] !== currentHistory[i]) {
+                    isMatch = false;
+                    break;
+                }
+            }
+            
+            // 如果匹配，添加下一步招法
+            if (isMatch && currentHistory.length < branch.moves.length) {
+                const nextMove = branch.moves[currentHistory.length];
+                if (nextMove) {
+                    nextMoves.add(nextMove);
+                }
+            }
+        }
+        
+        return Array.from(nextMoves).sort();
+    }
+
+    // 更新摆棋学习模式的棋谱显示
+    updateSetupLearningNotation() {
+        if (!this.isSetupLearningMode) return;
+        
+        // 重新高亮当前分支和招法
+        this.highlightCurrentBranchInNotation();
+        
+        // 如果棋谱区域被清空了（比如被updateMoveHistory清空），重新显示完整棋谱
+        if ($('#moveHistory').find('[id^="branch-"]').length === 0) {
+            this.showFullNotation();
+        }
+    }
+
+    // 处理记忆学习模式的移动
+    handleMemoryLearningMove(move) {
+        // 检查移动是否正确
+        const matchingBranch = this.findMatchingBranch(move);
+        
+        if (!matchingBranch) {
+            // 走错了，撤销移动
+            this.game.undo();
+            this.errorCount++; // 增加当前会话错误计数器
+            this.memoryTotalMoves++; // 增加记忆学习总步数
+            
+            // 记录记忆学习分支级别的错误计数
+            if (this.currentBranch) {
+                const branchId = this.currentBranch.id || `branch_${window.pgnParser.branches.indexOf(this.currentBranch)}`;
+                const currentBranchErrors = this.memoryBranchErrorCounts.get(branchId) || 0;
+                this.memoryBranchErrorCounts.set(branchId, currentBranchErrors + 1);
+                console.log(`记忆学习分支 ${branchId} 错误计数增加到: ${currentBranchErrors + 1}`);
+            }
+            
+            // 显示错误提示
+            this.showMemoryLearningError();
+            return;
+        }
+
+        // 走对了，重置错误计数器
+        this.errorCount = 0;
+        
+        // 统计正确步数（记忆学习模式）
+        this.memoryCorrectMoves++;
+        this.memoryTotalMoves++;
+        this.updateAccuracy();
+        
+        // 记录正确移动到数据库
+        this.recordMoveProgress(true);
+
+        // 更新当前分支
+        this.currentBranch = matchingBranch;
+        console.log('记忆学习模式：设置当前分支:', this.currentBranch);
+        console.log('当前错误计数重置为0，但分支学习过程中的错误记录仍然保留');
+        
+        // 更新可用分支
+        this.updateAvailableBranches();
+        
+        // 更新界面
+        this.updateMoveHistory(move);
+        this.updateTurnIndicator();
+        
+        // 立即更新可走棋子的高亮
+        this.highlightCurrentPieces();
+        
+        // 检查是否完成当前分支
+        if (this.isCurrentBranchCompleted()) {
+            console.log('当前分支已完成，调用分支完成处理');
+            this.onMemoryLearningBranchCompleted();
+            return true;
+        }
+        
+        // 额外检查：如果当前分支没有设置，但游戏历史已经完成某个分支
+        if (!this.currentBranch) {
+            console.log('当前分支未设置，检查是否有其他分支完成');
+            const currentHistory = this.game.history();
+            for (const branch of window.pgnParser.branches) {
+                if (currentHistory.length === branch.moves.length) {
+                    let isMatch = true;
+                    for (let i = 0; i < currentHistory.length; i++) {
+                        if (currentHistory[i] !== branch.moves[i]) {
+                            isMatch = false;
+                            break;
+                        }
+                    }
+                    if (isMatch) {
+                        console.log('找到完成的分支，但当前分支未设置，直接调用分支完成处理');
+                        this.onMemoryLearningBranchCompleted();
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // 执行电脑走棋
+        setTimeout(() => {
+            this.makeComputerMove();
+            // 电脑走棋后，重新高亮可走棋子
+            if (this.isMemoryLearningMode) {
+                setTimeout(() => this.highlightCurrentPieces(), 600);
+            }
+        }, 500);
+        
+        return true;
+    }
+
     onSnapEnd() {
         // 确保棋盘位置与游戏状态同步
         if (this.board) {
@@ -234,13 +476,60 @@ class ChessBoard {
         const currentHistory = this.game.history();
         const moveIndex = currentHistory.length - 1;
         
+        console.log('findMatchingBranch: 查找匹配分支');
+        console.log('当前历史:', currentHistory);
+        console.log('移动索引:', moveIndex);
+        console.log('移动SAN:', move.san);
+        console.log('当前模式: 背诵学习=', this.isStudyMode, '记忆学习=', this.isMemoryLearningMode);
+        
         // 在可用分支中查找匹配的分支
         for (const branch of this.availableBranches) {
             if (branch.moves[moveIndex] === move.san) {
+                console.log('在可用分支中找到匹配:', branch);
                 return branch;
             }
         }
         
+        // 如果availableBranches中没有找到，尝试在所有分支中查找
+        if (!window.pgnParser || !window.pgnParser.branches) {
+            console.log('没有PGN解析器或分支数据');
+            return null;
+        }
+        
+        for (const branch of window.pgnParser.branches) {
+            const branchId = branch.id || `branch_${window.pgnParser.branches.indexOf(branch)}`;
+            
+            // 根据当前模式跳过已完成的分支
+            if (this.isMemoryLearningMode) {
+                // 记忆学习模式：跳过已完成和暂停的分支
+                if (this.memoryCompletedBranches.has(branchId) || this.memoryPausedBranches.has(branchId)) {
+                    console.log('记忆学习模式：跳过已完成或暂停分支:', branchId);
+                    continue;
+                }
+            } else if (this.isStudyMode) {
+                // 背诵学习模式：跳过已完成的分支
+                if (this.completedBranches.has(branchId)) {
+                    console.log('背诵学习模式：跳过已完成分支:', branchId);
+                    continue;
+                }
+            }
+            
+            // 检查历史是否匹配
+            let isMatch = true;
+            for (let i = 0; i < currentHistory.length; i++) {
+                if (i >= branch.moves.length || branch.moves[i] !== currentHistory[i]) {
+                    isMatch = false;
+                    break;
+                }
+            }
+            
+            if (isMatch) {
+                console.log('在所有分支中找到匹配:', branch);
+                return branch;
+            }
+        }
+        
+        console.log('没有找到匹配的分支');
         return null;
     }
 
@@ -251,12 +540,44 @@ class ChessBoard {
         }
 
         const currentHistory = this.game.history();
+        console.log('更新可用分支，当前历史:', currentHistory);
+        console.log('当前模式: 背诵学习=', this.isStudyMode, '记忆学习=', this.isMemoryLearningMode);
+        
+        if (this.isMemoryLearningMode) {
+            console.log('记忆学习模式 - 已完成分支:', Array.from(this.memoryCompletedBranches));
+            console.log('记忆学习模式 - 暂停分支:', Array.from(this.memoryPausedBranches));
+        } else {
+            console.log('背诵学习模式 - 已完成分支:', Array.from(this.completedBranches));
+            console.log('背诵学习模式 - 暂停分支:', Array.from(this.pausedBranches));
+        }
         
         // 筛选出与当前历史匹配且未完成的分支
         this.availableBranches = window.pgnParser.branches.filter(branch => {
-            // 跳过已完成的分支
-            if (this.completedBranches.has(branch.id)) {
-                return false;
+            const branchId = branch.id || `branch_${window.pgnParser.branches.indexOf(branch)}`;
+            
+            if (this.isMemoryLearningMode) {
+                // 记忆学习模式：跳过已完成和暂停的分支
+                if (this.memoryCompletedBranches.has(branchId)) {
+                    console.log('记忆学习模式：跳过已完成分支:', branchId);
+                    return false;
+                }
+                
+                if (this.memoryPausedBranches && this.memoryPausedBranches.has(branchId)) {
+                    console.log('记忆学习模式：跳过暂停分支:', branchId);
+                    return false;
+                }
+            } else {
+                // 背诵学习模式：跳过已完成的分支
+                if (this.completedBranches.has(branchId)) {
+                    console.log('背诵学习模式：跳过已完成分支:', branchId);
+                    return false;
+                }
+                
+                // 跳过暂停的分支
+                if (this.pausedBranches && this.pausedBranches.has(branchId)) {
+                    console.log('背诵学习模式：跳过暂停分支:', branchId);
+                    return false;
+                }
             }
             
             // 检查历史是否匹配
@@ -268,23 +589,31 @@ class ChessBoard {
             
             return true;
         });
+        
+        console.log('可用分支数量:', this.availableBranches.length);
     }
 
     makeComputerMove() {
-        if (!this.currentBranch) return;
+        console.log('makeComputerMove 被调用，当前分支:', this.currentBranch);
+        if (!this.currentBranch) {
+            console.log('没有当前分支，无法执行电脑走棋');
+            return;
+        }
         
         const history = this.game.history();
         const nextMove = this.currentBranch.moves[history.length];
+        console.log('电脑下一步走法:', nextMove, '当前历史长度:', history.length);
         
         if (nextMove) {
             const move = this.game.move(nextMove);
             if (move) {
+                console.log('电脑成功执行走棋:', move);
                 if (this.board) {
                     this.board.position(this.game.fen()); // 更新棋盘位置
                 }
                 
                 // 清除高亮状态（电脑移动了）
-                this.clearHighlights();
+                this.clearHighlightsNew();
                 
                 this.updateMoveHistory(move);
                 this.updateTurnIndicator();
@@ -292,12 +621,47 @@ class ChessBoard {
                 // 更新可用分支
                 this.updateAvailableBranches();
                 
+                // 如果是记忆学习模式，重新高亮可走棋子
+                if (this.isMemoryLearningMode) {
+                    this.highlightCurrentPieces();
+                }
+                
                 // 检查电脑走完后是否完成分支
                 if (this.isCurrentBranchCompleted()) {
-                    this.onBranchCompleted();
+                    console.log('电脑走棋后检测到分支完成，调用分支完成处理');
+                    if (this.isMemoryLearningMode) {
+                        // 确保当前分支设置正确，以便状态记录
+                        if (!this.currentBranch) {
+                            console.log('警告：电脑走棋后分支完成，但currentBranch未设置，尝试查找匹配分支');
+                            const currentHistory = this.game.history();
+                            for (const branch of window.pgnParser.branches) {
+                                if (currentHistory.length === branch.moves.length) {
+                                    let isMatch = true;
+                                    for (let i = 0; i < currentHistory.length; i++) {
+                                        if (currentHistory[i] !== branch.moves[i]) {
+                                            isMatch = false;
+                                            break;
+                                        }
+                                    }
+                                    if (isMatch) {
+                                        this.currentBranch = branch;
+                                        console.log('找到匹配分支并设置为currentBranch:', branch);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        this.onMemoryLearningBranchCompleted();
+                    } else {
+                        this.onBranchCompleted();
+                    }
                     return;
                 }
+            } else {
+                console.log('电脑走棋失败');
             }
+        } else {
+            console.log('没有下一步走法');
         }
     }
 
@@ -330,30 +694,48 @@ class ChessBoard {
     }
 
     updateMoveHistory(move) {
-        const history = this.game.history();
-        const moveNumber = Math.floor((history.length + 1) / 2);
-        const isWhiteMove = history.length % 2 === 1;
+        const moveNumber = Math.ceil(this.game.history().length / 2);
+        const isWhiteMove = this.game.history().length % 2 === 1;
         
-        // 如果是白方走棋，创建新的行棋记录
+        let moveText = '';
         if (isWhiteMove) {
-            $('#moveHistory').append(
-                `<span class="move-pair" data-move="${moveNumber}">` +
-                `${moveNumber}. ${move.san}</span>`
-            );
+            moveText = `${moveNumber}. ${move.san}`;
         } else {
-            // 如果是黑方走棋，找到当前回合的span并添加黑方走法
-            const currentMove = $(`#moveHistory .move-pair[data-move="${moveNumber}"]`);
-            if (currentMove.length) {
-                currentMove.append(` ${move.san} `);
-            } else {
-                // 如果找不到当前回合的span（比如开局黑方），创建新的
-                $('#moveHistory').append(
-                    `<span class="move-pair" data-move="${moveNumber}">` +
-                    `${moveNumber}. ... ${move.san}</span>`
-                );
-            }
+            moveText = `${move.san}`;
         }
         
+        // 如果是摆棋学习模式，在棋谱下方添加走法历史
+        if (this.isSetupLearningMode) {
+            // 检查是否已经有走法历史区域
+            let historyContainer = $('#moveHistory').find('.move-history-container');
+            if (historyContainer.length === 0) {
+                // 创建走法历史容器
+                historyContainer = $('<div class="move-history-container" style="margin-top: 20px; padding-top: 15px; border-top: 2px solid #dee2e6;"><strong>📝 当前走法历史：</strong><div class="current-moves"></div></div>');
+                $('#moveHistory').append(historyContainer);
+            }
+            
+            // 添加新的走法
+            const movesContainer = historyContainer.find('.current-moves');
+            if (isWhiteMove) {
+                movesContainer.append(`<span class="move-pair">${moveText}</span>`);
+            } else {
+                // 找到最后一个白方走法，在其后添加黑方走法
+                const lastWhiteMove = movesContainer.find('.move-pair').last();
+                if (lastWhiteMove.length > 0) {
+                    lastWhiteMove.append(` ${move.san}`);
+                } else {
+                    movesContainer.append(`<span class="move-pair">... ${move.san}</span>`);
+                }
+            }
+            
+            // 更新棋谱显示
+            this.updateSetupLearningNotation();
+        } else {
+            // 非摆棋学习模式，使用原来的方式
+            $('#moveHistory').append(`<span class="move-pair">${moveText}</span>`);
+        }
+        
+        // 滚动到底部
         $('#moveHistory').scrollTop($('#moveHistory')[0].scrollHeight);
     }
 
@@ -404,6 +786,7 @@ class ChessBoard {
         this.updateTurnIndicator();
         this.currentBranch = null;
         this.errorCount = 0; // 重置错误计数器
+        this.branchErrorCounts.clear(); // 重置分支级别错误计数
         
         if (this.isStudyMode) {
             // 只有在明确要求时才重置正确率统计
@@ -419,11 +802,49 @@ class ChessBoard {
             if (this.orientation === 'black' && this.availableBranches.length > 0) {
                 setTimeout(() => this.makeFirstComputerMove(), 500);
             }
+        } else if (this.isSetupLearningMode) {
+            // 摆棋学习模式：重新显示完整棋谱
+            this.showFullNotation();
+            
+            // 清理分支过滤状态，重新开始
+            this.setupLearningHiddenBranches.clear();
+            this.availableBranches = [...window.pgnParser.branches];
+            
+            // 如果用户选择黑方，电脑先走
+            if (this.orientation === 'black' && window.pgnParser && window.pgnParser.branches) {
+                setTimeout(() => this.makeFirstComputerMoveForSetupLearning(), 500);
+            }
+        } else if (this.isMemoryLearningMode) {
+            // 记忆学习模式：重新高亮可走棋子
+            this.highlightCurrentPieces();
+            
+            // 如果明确要求重置正确率，重置记忆学习的统计数据
+            if (resetAccuracy) {
+                this.memoryCorrectMoves = 0;
+                this.memoryTotalMoves = 0;
+                this.updateAccuracy();
+            }
+            
+            // 如果用户选择黑方，电脑先走白方棋
+            if (this.orientation === 'black' && this.availableBranches.length > 0) {
+                // 检查是否所有分支都已完成或暂停
+                const totalBranches = window.pgnParser.branches.length;
+                const completedAndPausedCount = this.completedBranches.size + (this.pausedBranches ? this.pausedBranches.size : 0);
+                
+                if (completedAndPausedCount >= totalBranches) {
+                    console.log('记忆学习模式黑方视角：所有分支都已完成或暂停，电脑不再自动走棋');
+                } else {
+                    console.log('记忆学习模式黑方视角：准备电脑首步走棋，可用分支数量:', this.availableBranches.length);
+                    setTimeout(() => this.makeFirstComputerMoveForMemoryLearning(), 500);
+                }
+            } else if (this.orientation === 'black') {
+                console.log('记忆学习模式黑方视角：没有可用分支，无法进行电脑首步走棋');
+            }
         }
     }
 
     makeFirstComputerMove() {
-        if (!this.isStudyMode || this.availableBranches.length === 0) return;
+        if ((!this.isStudyMode && !this.isMemoryLearningMode) || this.availableBranches.length === 0) return;
         
         // 获取第一手可能的走法和对应的分支
         const firstMoveOptions = new Map(); // 走法 -> 对应的分支数组
@@ -487,11 +908,16 @@ class ChessBoard {
                 }
                 
                 // 清除高亮状态（电脑移动了）
-                this.clearHighlights();
+                this.clearHighlightsNew();
                 
                 this.updateMoveHistory(move);
                 this.updateTurnIndicator();
                 this.updateAvailableBranches();
+                
+                // 如果是记忆学习模式，重新高亮可走棋子
+                if (this.isMemoryLearningMode) {
+                    setTimeout(() => this.highlightCurrentPieces(), 100);
+                }
                 
                 // 显示提示信息
                 const message = `电脑选择了走法: ${randomMove}。现在轮到您走棋了！`;
@@ -505,8 +931,30 @@ class ChessBoard {
     updateProgress() {
         // 直接使用branches数组的长度，因为window.pgnParser现在是后端响应对象
         const total = window.pgnParser && window.pgnParser.branches ? window.pgnParser.branches.length : 0;
-        const completed = this.completedBranches.size;
+        let completed = 0;
+        
+        // 根据当前模式计算完成的分支数
+        if (this.isMemoryLearningMode) {
+            // 记忆学习模式：使用记忆学习独立的状态集合
+            completed = this.memoryCompletedBranches.size + (this.memoryPausedBranches ? this.memoryPausedBranches.size : 0);
+        } else {
+            // 背谱模式：使用背诵学习的状态集合
+            completed = this.completedBranches.size;
+        }
+        
         const progress = total > 0 ? Math.round((completed / total) * 100) : 0;
+        
+        console.log('=== 更新进度显示 ===');
+        console.log('总分支数:', total);
+        console.log('已完成分支数:', completed);
+        console.log('完成进度:', progress + '%');
+        
+        if (this.isMemoryLearningMode) {
+            console.log('记忆学习模式 - 已完成分支列表:', Array.from(this.memoryCompletedBranches));
+            console.log('记忆学习模式 - 暂停分支列表:', Array.from(this.memoryPausedBranches || []));
+        } else {
+            console.log('背诵学习模式 - 已完成分支列表:', Array.from(this.completedBranches));
+        }
         
         $('#totalBranches').text(total);
         $('#completedBranches').text(completed);
@@ -514,31 +962,59 @@ class ChessBoard {
         
         if (progress === 100 && total > 0) {
             // 显示恭喜信息，并从后端获取真实的累积正确率
+            console.log('所有分支已完成，显示完成横幅');
             this.showCompletionBanner();
         }
+        
+        console.log('=== 进度显示更新完成 ===');
     }
 
     updateAccuracy() {
-        // 如果有当前PGN ID，从后端获取累积正确率
-        if (window.currentPgnId && window.chessAPI && window.chessAPI.isBackendAvailable) {
-            this.updateAccuracyFromBackend();
+        // 根据当前模式选择正确的统计数据
+        if (this.isMemoryLearningMode) {
+            // 记忆学习模式：使用记忆学习的统计数据
+            const accuracy = this.memoryTotalMoves > 0 ? Math.round((this.memoryCorrectMoves / this.memoryTotalMoves) * 100) : 0;
+            this.displayAccuracy(accuracy, this.memoryCorrectMoves, this.memoryTotalMoves);
+        } else if (this.isStudyMode) {
+            // 背谱模式：从后端获取累积正确率
+            if (window.currentPgnId && window.chessAPI && window.chessAPI.isBackendAvailable) {
+                this.updateAccuracyFromBackend();
+            } else {
+                // 后备方案：使用当前会话的数据计算正确率
+                const accuracy = this.totalMoves > 0 ? Math.round((this.correctMoves / this.totalMoves) * 100) : 0;
+                this.displayAccuracy(accuracy, this.correctMoves, this.totalMoves);
+            }
         } else {
-            // 后备方案：使用当前会话的数据计算正确率
-            const accuracy = this.totalMoves > 0 ? Math.round((this.correctMoves / this.totalMoves) * 100) : 0;
-            this.displayAccuracy(accuracy, this.correctMoves, this.totalMoves);
+            // 其他模式：使用背谱的统计数据
+            if (window.currentPgnId && window.chessAPI && window.chessAPI.isBackendAvailable) {
+                this.updateAccuracyFromBackend();
+            } else {
+                const accuracy = this.totalMoves > 0 ? Math.round((this.correctMoves / this.totalMoves) * 100) : 0;
+                this.displayAccuracy(accuracy, this.correctMoves, this.totalMoves);
+            }
         }
     }
 
     async showCompletionBanner() {
+        // 根据当前模式选择不同的完成提示
+        let completionText = '';
+        if (this.isMemoryLearningMode) {
+            completionText = '🎉 恭喜！您已记忆完所有分支！';
+        } else if (this.isSetupLearningMode) {
+            completionText = '🎉 恭喜！您已完成所有分支的摆棋学习！';
+        } else {
+            completionText = '🎉 恭喜！您已背完所有分支！';
+        }
+        
         // 默认显示信息（如果无法从后端获取数据，则使用当前会话数据）
         let finalAccuracyText = '正在获取...';
         
         // 先显示横幅
-        $('#completionBanner').html(`🎉 恭喜！您已背完所有分支！最终正确率：<span style="font-weight: bold;">${finalAccuracyText}</span>`);
+        $('#completionBanner').html(`${completionText} 最终正确率：<span style="font-weight: bold;">${finalAccuracyText}</span>`);
         $('#completionBanner').show();
         
         // 尝试从后端获取真实的累积正确率
-        if (window.currentPgnId && window.chessAPI && window.chessAPI.isBackendAvailable) {
+        if (window.currentPgnId && window.chessAPI && window.chessAPI.isBackendAvailable && !this.isMemoryLearningMode) {
             try {
                 const response = await fetch(`${window.chessAPI.baseURL}/progress/current-stats/${window.currentPgnId}`, {
                     credentials: 'include'
@@ -568,6 +1044,13 @@ class ChessBoard {
                     '0/0 (0%)';
                 console.log(`最终正确率（会话数据）: ${finalAccuracyText}`);
             }
+        } else if (this.isMemoryLearningMode) {
+            // 记忆学习模式：使用记忆学习的统计数据
+            const finalAccuracy = this.memoryTotalMoves > 0 ? Math.round((this.memoryCorrectMoves / this.memoryTotalMoves) * 100) : 0;
+            finalAccuracyText = this.memoryTotalMoves > 0 ? 
+                `${this.memoryCorrectMoves}/${this.memoryTotalMoves} (${finalAccuracy}%)` : 
+                '0/0 (0%)';
+            console.log(`记忆学习最终正确率: ${finalAccuracyText}`);
         } else {
             // 没有后端连接，使用当前会话数据
             const finalAccuracy = this.totalMoves > 0 ? Math.round((this.correctMoves / this.totalMoves) * 100) : 0;
@@ -578,7 +1061,7 @@ class ChessBoard {
         }
         
         // 更新横幅显示真实的正确率
-        $('#completionBanner').html(`🎉 恭喜！您已背完所有分支！最终正确率：<span style="font-weight: bold;">${finalAccuracyText}</span>`);
+        $('#completionBanner').html(`${completionText} 最终正确率：<span style="font-weight: bold;">${finalAccuracyText}</span>`);
     }
 
     async updateAccuracyFromBackend() {
@@ -607,9 +1090,24 @@ class ChessBoard {
     }
 
     displayAccuracy(accuracy, correct = 0, total = 0) {
+        // 根据当前模式选择正确的标签
+        let labelText = '背谱正确率';
+        if (this.isMemoryLearningMode) {
+            labelText = '记忆学习正确率';
+        } else if (this.isSetupLearningMode) {
+            labelText = '摆棋学习正确率';
+        }
+        
         // 更新UI显示，包含分子分母格式
         const accuracyText = total > 0 ? `${correct}/${total} (${accuracy}%)` : '0/0 (0%)';
         $('#accuracy').text(accuracyText);
+        
+        // 更新标签文本（找到包含accuracy span的div元素）
+        const accuracyDiv = $('#accuracy').parent();
+        if (accuracyDiv.length > 0) {
+            // 替换整个div的内容
+            accuracyDiv.html(`${labelText}: <span id="accuracy">${accuracyText}</span>`);
+        }
         
         // 根据正确率设置不同的颜色
         const accuracyElement = $('#accuracy');
@@ -686,10 +1184,16 @@ class ChessBoard {
         // 重置正确率统计
         this.correctMoves = 0;
         this.totalMoves = 0;
+        this.memoryCorrectMoves = 0; // 重置记忆学习正确步数
+        this.memoryTotalMoves = 0;   // 重置记忆学习总步数
+        this.errorCount = 0; // 重置错误计数器
+        this.branchErrorCounts.clear(); // 重置分支级别错误计数
         this.updateAccuracy();
         
-        this.resetPosition(true); // 重置位置并重置正确率
-        this.errorCount = 0; // 重置错误计数器
+        // 先更新可用分支，确保resetPosition中的电脑首步走棋逻辑能正确执行
+        this.updateAvailableBranches();
+        
+        this.resetPosition(true);
         
         // 再次检查是否有可用分支
         if (this.availableBranches.length === 0) {
@@ -722,17 +1226,195 @@ class ChessBoard {
         return true;
     }
 
-    stopStudy() {
+    // 摆棋学习模式
+    async startSetupLearning() {
+        // 检查是否有PGN数据
+        if (!window.pgnParser || !window.pgnParser.branches || window.pgnParser.branches.length === 0) {
+            const message = '请先加载PGN文件！';
+            $('#errorToast').text(message).css('background', '#dc3545').fadeIn().delay(3000).fadeOut().promise().done(() => {
+                $('#errorToast').css('background', '#ff4444');
+            });
+            return false;
+        }
+
+        this.isSetupLearningMode = true;
         this.isStudyMode = false;
-        this.currentBranch = null;
-        this.availableBranches = [];
-        this.computerUsedBranches.clear(); // 清空电脑已使用的分支记录
-        this.errorCount = 0; // 重置错误计数器
+        this.isMemoryLearningMode = false;
+        
+        // 初始化摆棋学习的分支过滤状态
+        this.setupLearningHiddenBranches.clear();
+        this.availableBranches = [...window.pgnParser.branches]; // 复制所有分支作为初始可用分支
         
         // 重置正确率统计
         this.correctMoves = 0;
         this.totalMoves = 0;
+        this.memoryCorrectMoves = 0;
+        this.memoryTotalMoves = 0;
+        this.errorCount = 0;
+        this.branchErrorCounts.clear();
+        this.memoryBranchErrorCounts.clear();
         this.updateAccuracy();
+        
+        // 重置棋盘位置
+        this.resetPosition(true);
+        
+        // 显示完整棋谱
+        this.showFullNotation();
+        
+        // 移动端棋谱显示验证
+        setTimeout(() => {
+            const moveHistoryElement = $('#moveHistory');
+            const branchElements = moveHistoryElement.find('[id^="branch-"]');
+            const notationTitle = moveHistoryElement.find('strong:contains("📚 完整棋谱：")');
+            
+            console.log('摆棋学习启动后棋谱显示验证:');
+            console.log('moveHistory元素存在:', moveHistoryElement.length > 0);
+            console.log('棋谱标题存在:', notationTitle.length > 0);
+            console.log('分支元素数量:', branchElements.length);
+            console.log('预期分支数量:', window.pgnParser.branches.length);
+            
+            if (branchElements.length === 0) {
+                console.warn('警告：没有找到分支元素，棋谱可能没有正确显示');
+                // 尝试重新显示棋谱
+                this.showFullNotation();
+            }
+            
+            // 检查移动端显示
+            const isMobile = window.innerWidth <= 768;
+            if (isMobile) {
+                console.log('移动端检测：当前为移动端显示');
+                console.log('屏幕宽度:', window.innerWidth);
+                console.log('容器宽度:', moveHistoryElement.width());
+                console.log('容器高度:', moveHistoryElement.height());
+            }
+        }, 500);
+        
+        // 显示提示信息
+        const message = '摆棋学习模式已开启！请按照棋谱走棋。系统会高亮走过的招法，走错时会提示并隐藏不匹配的分支。';
+        $('#errorToast').text(message).css('background', '#17a2b8').fadeIn().delay(4000).fadeOut().promise().done(() => {
+            $('#errorToast').css('background', '#ff4444');
+        });
+        
+        return true;
+    }
+
+    // 记忆学习模式
+    async startMemoryLearning() {
+        // 检查是否有PGN数据
+        if (!window.pgnParser || !window.pgnParser.branches || window.pgnParser.branches.length === 0) {
+            const message = '请先加载PGN文件！';
+            $('#errorToast').text(message).css('background', '#dc3545').fadeIn().delay(3000).fadeOut().promise().done(() => {
+                $('#errorToast').css('background', '#ff4444');
+            });
+            return false;
+        }
+
+        this.isMemoryLearningMode = true;
+        this.isStudyMode = false;
+        this.isSetupLearningMode = false;
+        
+        // 加载用户进度
+        await this.loadUserProgress();
+        
+        // 在记忆学习模式下，清空从后端加载的背诵进度
+        if (this.isMemoryLearningMode) {
+            console.log('记忆学习模式：清空从后端加载的背诵进度');
+            // 清空从后端加载的分支状态
+            this.completedBranches.clear();
+            this.pausedBranches.clear();
+        }
+        
+        // 从持久化存储恢复记忆学习的分支状态
+        this.restoreBranchStatesFromStorage();
+        
+        // 重置正确率统计
+        this.correctMoves = 0;
+        this.totalMoves = 0;
+        this.memoryCorrectMoves = 0; // 重置记忆学习正确步数
+        this.memoryTotalMoves = 0;   // 重置记忆学习总步数
+        this.errorCount = 0; // 重置错误计数器
+        this.branchErrorCounts.clear(); // 重置背诵学习分支级别错误计数
+        this.memoryBranchErrorCounts.clear(); // 重置记忆学习分支级别错误计数
+        this.updateAccuracy();
+        
+        // 先更新可用分支，确保resetPosition中的电脑首步走棋逻辑能正确执行
+        this.updateAvailableBranches();
+        
+        this.resetPosition(true);
+        
+        // 更新可用分支
+        this.updateAvailableBranches();
+        
+        // 隐藏棋谱显示
+        this.hideNotation();
+        
+        // 显示所有分支名称
+        this.showBranchNames();
+        
+        // 高亮当前可走的棋子
+        this.highlightCurrentPieces();
+        
+        // 显示提示信息
+        let message = '';
+        if (this.orientation === 'white') {
+            message = `记忆学习模式已开启！您是白方，请先走棋。系统会高亮可走的棋子，请尝试走出正确的招法。错误2次后将提示正确走法。`;
+            console.log('记忆学习模式：白方视角，等待用户先走棋');
+        } else {
+            message = `记忆学习模式已开启！您是黑方，电脑将先走白方棋。系统会高亮可走的棋子，请尝试走出正确的招法。错误2次后将提示正确走法。`;
+            console.log('记忆学习模式：黑方视角，电脑将先走白方棋');
+        }
+        
+        // 添加移动端点击走棋的测试信息
+        console.log('记忆学习模式：移动端点击走棋已启用');
+        console.log('点击走棋支持状态:', this.clickToMove);
+        console.log('棋盘元素状态:', !!this.board);
+        
+        $('#errorToast').text(message).css('background', '#FF5722').fadeIn().delay(4000).fadeOut().promise().done(() => {
+            $('#errorToast').css('background', '#ff4444');
+        });
+        
+        // 如果是黑方视角，确保电脑首步走棋逻辑正确执行
+        if (this.orientation === 'black') {
+            console.log('黑方视角：检查可用分支数量:', this.availableBranches.length);
+            console.log('黑方视角：等待resetPosition中的电脑首步走棋逻辑执行');
+        }
+        
+        return true;
+    }
+
+    stopStudy() {
+        this.isStudyMode = false;
+        this.isSetupLearningMode = false;
+        this.isMemoryLearningMode = false;
+        this.currentBranch = null;
+        this.availableBranches = [];
+        this.computerUsedBranches.clear(); // 清空电脑已使用的分支记录
+        this.errorCount = 0; // 重置错误计数器
+        this.branchErrorCounts.clear(); // 重置分支级别错误计数
+        this.memoryBranchErrorCounts.clear(); // 重置记忆学习分支级别错误计数
+        
+        // 清理摆棋学习的分支过滤状态
+        this.setupLearningHiddenBranches.clear();
+        
+        // 重置正确率统计
+        this.correctMoves = 0;
+        this.totalMoves = 0;
+        this.memoryCorrectMoves = 0; // 重置记忆学习正确步数
+        this.memoryTotalMoves = 0;   // 重置记忆学习总步数
+        this.updateAccuracy();
+        
+        // 清除高亮状态
+        this.clearHighlightsNew();
+        
+        // 隐藏棋谱显示
+        this.hideNotation();
+        
+        // 隐藏分支名称显示
+        $('#branchNames').hide();
+        
+        // 注意：不清理本地存储的分支状态，保留记忆学习进度
+        // 只有在用户明确要求重置进度时才清理
+        console.log('停止学习模式，保留记忆学习进度');
         
         return true;
     }
@@ -893,6 +1575,7 @@ class ChessBoard {
         const piece = this.game.get(square);
         
         console.log(`处理方格点击: ${square}, 棋子:`, piece, '当前选中:', this.selectedSquare);
+        console.log(`当前模式: 背诵学习=${this.isStudyMode}, 记忆学习=${this.isMemoryLearningMode}, 摆棋学习=${this.isSetupLearningMode}`);
         
         // 如果没有选中的方格
         if (!this.selectedSquare) {
@@ -965,29 +1648,29 @@ class ChessBoard {
         console.log(`当前轮次: ${currentTurn}, 棋子颜色: ${piece.color}, 背谱模式: ${this.isStudyMode}, 棋盘方向: ${this.orientation}`);
         
         // 如果不在背谱模式，允许选择当前方的棋子
-        if (!this.isStudyMode) {
+        if (!this.isStudyMode && !this.isMemoryLearningMode) {
             const canSelect = (currentTurn === 'w' && piece.color === 'w') ||
                              (currentTurn === 'b' && piece.color === 'b');
-            console.log(`非背谱模式选择结果: ${canSelect}`);
+            console.log(`非学习模式选择结果: ${canSelect}`);
             return canSelect;
         }
 
-        // 背谱模式下的选择限制
+        // 学习模式（背诵学习或记忆学习）下的选择限制
         const isWhiteTurn = currentTurn === 'w';
         const canMove = (this.orientation === 'white' && isWhiteTurn) ||
                         (this.orientation === 'black' && !isWhiteTurn);
         
-        console.log(`背谱模式检查: isWhiteTurn=${isWhiteTurn}, canMove=${canMove}`);
+        console.log(`学习模式检查: isWhiteTurn=${isWhiteTurn}, canMove=${canMove}`);
         
         if (!canMove) {
-            console.log('背谱模式下不能移动');
+            console.log('学习模式下不能移动');
             return false;
         }
         
         // 只允许选择当前方的棋子
         const canSelectInStudy = (currentTurn === 'w' && piece.color === 'w') ||
                                 (currentTurn === 'b' && piece.color === 'b');
-        console.log(`背谱模式选择结果: ${canSelectInStudy}`);
+        console.log(`学习模式选择结果: ${canSelectInStudy}`);
         return canSelectInStudy;
     }
 
@@ -1135,7 +1818,7 @@ class ChessBoard {
         }
         
         // 清除所有高亮
-        this.clearHighlights();
+        this.clearHighlightsNew();
     }
 
     // 尝试移动棋子
@@ -1161,12 +1844,71 @@ class ChessBoard {
         this.board.position(this.game.fen());
 
         // 清除高亮状态（有棋子移动了）
-        this.clearHighlights();
+        this.clearHighlightsNew();
 
         // 如果不在背谱模式，允许自由下棋
-        if (!this.isStudyMode) {
+        if (!this.isStudyMode && !this.isMemoryLearningMode) {
             this.updateMoveHistory(move);
             this.updateTurnIndicator();
+            return true;
+        }
+
+        // 记忆学习模式下的移动处理
+        if (this.isMemoryLearningMode) {
+            console.log('记忆学习模式：处理用户移动');
+            console.log('移动详情:', move);
+            console.log('当前游戏历史:', this.game.history());
+            
+            const matchingBranch = this.findMatchingBranch(move);
+            console.log('查找匹配分支结果:', matchingBranch);
+            
+            if (!matchingBranch) {
+                // 没有匹配的分支，走错了
+                console.log('记忆学习：没有找到匹配的分支');
+                this.game.undo(); // 撤销移动
+                this.board.position(this.game.fen()); // 更新棋盘显示
+                
+                // 统计错误步数
+                this.errorCount++;
+                this.memoryTotalMoves++;
+                this.updateAccuracy();
+                
+                // 显示错误提示
+                this.showMemoryLearningError();
+                return false;
+            }
+            
+            console.log('记忆学习：找到匹配的分支');
+            console.log('匹配分支详情:', matchingBranch);
+            
+            // 走对了，重置错误计数器
+            this.errorCount = 0;
+            
+            // 统计正确步数
+            this.memoryCorrectMoves++;
+            this.memoryTotalMoves++;
+            this.updateAccuracy();
+            
+            // 更新当前分支
+            this.currentBranch = matchingBranch;
+            this.updateAvailableBranches();
+            
+            // 更新界面
+            this.updateMoveHistory(move);
+            this.updateTurnIndicator();
+            this.highlightCurrentPieces();
+            
+            // 检查是否完成当前分支
+            if (this.isCurrentBranchCompleted()) {
+                console.log('记忆学习：当前分支已完成，调用分支完成处理');
+                this.onMemoryLearningBranchCompleted();
+                return true;
+            }
+            
+            // 执行电脑走棋
+            console.log('记忆学习：准备执行电脑走棋');
+            setTimeout(() => this.makeComputerMove(), 500);
+            
             return true;
         }
 
@@ -1175,9 +1917,8 @@ class ChessBoard {
         
         if (!matchingBranch) {
             // 没有匹配的分支，走错了
-            console.log('没有找到匹配的分支');
+            console.log('No matching branch found');
             this.game.undo(); // 撤销移动
-            this.board.position(this.game.fen()); // 更新棋盘显示
             
             // 统计错误步数：已走步数+1，正确步数不变
             this.totalMoves++;
@@ -1187,10 +1928,10 @@ class ChessBoard {
             this.recordMoveProgress(false);
             
             this.showError();
-            return false;
+            return 'snapback';
         }
 
-        console.log('找到匹配的分支');
+        console.log('Found matching branch');
 
         // 走对了，重置错误计数器
         this.errorCount = 0;
@@ -1219,7 +1960,7 @@ class ChessBoard {
 
         // 执行电脑走棋
         setTimeout(() => this.makeComputerMove(), 500);
-
+        
         return true;
     }
 
@@ -1430,8 +2171,14 @@ class ChessBoard {
 
     // 加载用户进度
     async loadUserProgress() {
-        if (!window.chessAPI || !window.chessAPI.isBackendAvailable || !window.pgnParser?.metadata?.id) {
-            console.log('跳过加载用户进度：后端不可用或没有PGN数据');
+        // 如果是记忆学习模式，跳过加载背诵进度
+        if (this.isMemoryLearningMode) {
+            console.log('记忆学习模式：跳过加载背诵进度，只使用本地存储的记忆学习状态');
+            return;
+        }
+        
+        if (!window.currentPgnId || !window.chessAPI || !window.chessAPI.isBackendAvailable) {
+            console.log('无法加载用户进度：缺少必要参数或后端不可用');
             return;
         }
 
@@ -1463,6 +2210,11 @@ class ChessBoard {
                             this.completedBranches.add(progress.branch_id);
                             console.log(`恢复已完成分支：${progress.branch_id}`);
                         }
+                        // 检查是否有暂停的分支（记忆学习模式下的特殊标记）
+                        if (progress.is_paused) {
+                            this.pausedBranches.add(progress.branch_id);
+                            console.log(`恢复暂停分支：${progress.branch_id}`);
+                        }
                     });
                     
                     // 更新进度显示
@@ -1483,5 +2235,1047 @@ class ChessBoard {
         } catch (error) {
             console.error('加载用户进度请求失败:', error);
         }
+    }
+
+    // 显示完整棋谱
+    showFullNotation() {
+        if (!window.pgnParser || !window.pgnParser.branches) {
+            console.log('showFullNotation: 没有PGN数据');
+            return;
+        }
+
+        console.log('showFullNotation: 开始显示棋谱');
+        console.log('分支数量:', window.pgnParser.branches.length);
+        console.log('当前模式: 摆棋学习=', this.isSetupLearningMode, '记忆学习=', this.isMemoryLearningMode);
+
+        // 检测是否为移动端
+        const isMobile = window.innerWidth <= 768;
+        console.log('移动端检测:', isMobile, '屏幕宽度:', window.innerWidth);
+
+        // 创建棋谱显示区域
+        let notationHTML = '<div style="margin-bottom: 15px;"><strong>📚 完整棋谱：</strong></div>';
+        
+        // 获取当前走棋历史
+        const currentHistory = this.game.history();
+        console.log('当前走棋历史:', currentHistory);
+        
+        // 显示所有分支的棋谱，高亮当前走过的招法
+        window.pgnParser.branches.forEach((branch, branchIndex) => {
+            const branchId = branch.id || `branch_${branchIndex}`;
+            const isHidden = this.setupLearningHiddenBranches.has(branchId);
+            
+            console.log(`分支 ${branchIndex + 1}:`, branch.moves, '隐藏状态:', isHidden);
+            
+            // 移动端优化样式
+            const mobileStyle = isMobile ? 'font-size: 12px; line-height: 1.4;' : '';
+            
+            notationHTML += `<div id="branch-${branchIndex}" style="margin-bottom: 10px; padding: 8px; background: ${isHidden ? '#f8d7da' : '#f8f9fa'}; border-radius: 4px; border-left: 4px solid ${isHidden ? '#dc3545' : '#dee2e6'}; ${isHidden ? 'opacity: 0.6;' : ''} ${mobileStyle}">`;
+            
+            if (isHidden) {
+                notationHTML += `<strong>分支 ${branchIndex + 1} (已隐藏):</strong> `;
+            } else {
+                notationHTML += `<strong>分支 ${branchIndex + 1}:</strong> `;
+            }
+            
+            // 为每个招法添加span标签，便于高亮
+            branch.moves.forEach((move, moveIndex) => {
+                const moveId = `branch-${branchIndex}-move-${moveIndex}`;
+                const isCurrentMove = moveIndex < currentHistory.length && currentHistory[moveIndex] === move;
+                const isPastMove = moveIndex < currentHistory.length;
+                
+                let moveClass = '';
+                if (isCurrentMove) {
+                    moveClass = 'current-move';
+                } else if (isPastMove) {
+                    moveClass = 'past-move';
+                }
+                
+                // 移动端优化招法显示
+                const moveStyle = isMobile ? 'font-size: 11px; padding: 2px 4px; margin: 1px; min-width: 35px; text-align: center;' : '';
+                
+                notationHTML += `<span id="${moveId}" class="chess-move ${moveClass}" style="${moveStyle}">${move}</span> `;
+            });
+            
+            notationHTML += '</div>';
+        });
+
+        console.log('棋谱HTML生成完成，长度:', notationHTML.length);
+
+        // 在走法历史区域显示棋谱
+        const moveHistoryElement = $('#moveHistory');
+        if (moveHistoryElement.length > 0) {
+            moveHistoryElement.html(notationHTML);
+            console.log('棋谱已显示到moveHistory区域');
+        } else {
+            console.error('moveHistory元素未找到');
+        }
+        
+        // 添加CSS样式
+        this.addNotationStyles();
+        
+        // 高亮当前分支
+        this.highlightCurrentBranchInNotation();
+        
+        // 如果是摆棋学习模式，显示可用分支信息
+        if (this.isSetupLearningMode) {
+            this.showSetupLearningBranchInfo();
+        }
+        
+        console.log('showFullNotation: 完成');
+    }
+    
+    // 显示摆棋学习的可用分支信息
+    showSetupLearningBranchInfo() {
+        if (!window.pgnParser || !window.pgnParser.branches) {
+            console.log('showSetupLearningBranchInfo: 没有PGN数据');
+            return;
+        }
+
+        const totalBranches = window.pgnParser.branches.length;
+        const hiddenBranches = this.setupLearningHiddenBranches.size;
+        const availableBranches = totalBranches - hiddenBranches;
+        
+        console.log('showSetupLearningBranchInfo: 显示分支信息');
+        console.log('总分支数:', totalBranches);
+        console.log('隐藏分支数:', hiddenBranches);
+        console.log('可用分支数:', availableBranches);
+
+        // 检测是否为移动端
+        const isMobile = window.innerWidth <= 768;
+        console.log('移动端检测:', isMobile, '屏幕宽度:', window.innerWidth);
+        
+        // 移动端优化样式
+        const mobileStyle = isMobile ? 'font-size: 12px; padding: 8px;' : 'padding: 10px;';
+        
+        let infoHTML = `<div style="margin-top: 15px; ${mobileStyle} background: #e3f2fd; border-radius: 4px; border-left: 4px solid #2196f3;">`;
+        infoHTML += '<strong>📊 摆棋学习进度：</strong><br>';
+        infoHTML += `• 总分支数：${totalBranches}<br>`;
+        infoHTML += `• 可用分支：${availableBranches}<br>`;
+        infoHTML += `• 已隐藏分支：${hiddenBranches}`;
+        
+        if (hiddenBranches > 0) {
+            infoHTML += '<br><small style="color: #666;">💡 走错的分支会被隐藏，不再参与后续的招法检查</small>';
+        }
+        
+        infoHTML += '</div>';
+        
+        console.log('分支信息HTML生成完成，长度:', infoHTML.length);
+        
+        // 在棋谱下方显示信息
+        const moveHistoryElement = $('#moveHistory');
+        if (moveHistoryElement.length > 0) {
+            moveHistoryElement.append(infoHTML);
+            console.log('分支信息已添加到moveHistory区域');
+        } else {
+            console.error('moveHistory元素未找到，无法显示分支信息');
+        }
+    }
+
+    // 添加棋谱显示的CSS样式
+    addNotationStyles() {
+        // 检查是否已经添加了样式
+        if (document.getElementById('notation-styles')) {
+            return;
+        }
+        
+        const style = document.createElement('style');
+        style.id = 'notation-styles';
+        style.textContent = `
+            .chess-move {
+                padding: 2px 4px;
+                margin: 0 1px;
+                border-radius: 3px;
+                cursor: pointer;
+                transition: all 0.3s ease;
+            }
+            .chess-move:hover {
+                background: rgba(0, 123, 255, 0.1);
+            }
+            .chess-move.past-move {
+                background: rgba(40, 167, 69, 0.2);
+                color: #155724;
+                font-weight: 500;
+            }
+            .chess-move.current-move {
+                background: rgba(0, 123, 255, 0.3);
+                color: #004085;
+                font-weight: bold;
+                box-shadow: 0 0 5px rgba(0, 123, 255, 0.5);
+            }
+            .branch-active {
+                background: #e3f2fd !important;
+                border-left: 4px solid #2196F3;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // 高亮当前分支在棋谱中的显示
+    highlightCurrentBranchInNotation() {
+        if (!this.isSetupLearningMode) return;
+        
+        const currentHistory = this.game.history();
+        if (currentHistory.length === 0) return;
+        
+        // 找到匹配当前历史的分支
+        let matchingBranchIndex = -1;
+        for (let i = 0; i < window.pgnParser.branches.length; i++) {
+            const branch = window.pgnParser.branches[i];
+            let isMatch = true;
+            
+            for (let j = 0; j < currentHistory.length; j++) {
+                if (j >= branch.moves.length || branch.moves[j] !== currentHistory[j]) {
+                    isMatch = false;
+                    break;
+                }
+            }
+            
+            if (isMatch) {
+                matchingBranchIndex = i;
+                break;
+            }
+        }
+        
+        // 移除所有分支的高亮
+        document.querySelectorAll('[id^="branch-"]').forEach(element => {
+            element.classList.remove('branch-active');
+        });
+        
+        // 高亮匹配的分支
+        if (matchingBranchIndex >= 0) {
+            const branchElement = document.getElementById(`branch-${matchingBranchIndex}`);
+            if (branchElement) {
+                branchElement.classList.add('branch-active');
+            }
+        }
+        
+        // 更新招法高亮
+        this.updateMoveHighlights();
+    }
+
+    // 更新招法高亮
+    updateMoveHighlights() {
+        const currentHistory = this.game.history();
+        
+        // 清除所有招法的高亮
+        document.querySelectorAll('.chess-move').forEach(element => {
+            element.classList.remove('past-move', 'current-move');
+        });
+        
+        // 为每个分支更新招法高亮
+        window.pgnParser.branches.forEach((branch, branchIndex) => {
+            branch.moves.forEach((move, moveIndex) => {
+                const moveElement = document.getElementById(`branch-${branchIndex}-move-${moveIndex}`);
+                if (!moveElement) return;
+                
+                if (moveIndex < currentHistory.length) {
+                    if (currentHistory[moveIndex] === move) {
+                        // 当前招法
+                        moveElement.classList.add('current-move');
+                    } else {
+                        // 过去的招法（不匹配）
+                        moveElement.classList.add('past-move');
+                    }
+                }
+            });
+        });
+    }
+
+    // 隐藏棋谱显示
+    hideNotation() {
+        $('#moveHistory').empty();
+    }
+
+    // 高亮当前可走的棋子
+    highlightCurrentPieces() {
+        if (!this.isMemoryLearningMode) {
+            return;
+        }
+
+        console.log('记忆学习模式：开始高亮可走棋子');
+        
+        // 获取当前局面的所有合法走法
+        const moves = this.game.moves({ verbose: true });
+        const piecePositions = new Set();
+
+        // 获取当前历史
+        const currentHistory = this.game.history();
+        console.log('当前历史:', currentHistory);
+        
+        // 在所有分支中查找匹配当前历史的分支
+        for (const branch of window.pgnParser.branches) {
+            const branchId = branch.id || `branch_${window.pgnParser.branches.indexOf(branch)}`;
+            
+            // 跳过已完成和暂停的分支
+            if (this.memoryCompletedBranches.has(branchId) || (this.memoryPausedBranches && this.memoryPausedBranches.has(branchId))) {
+                continue;
+            }
+            
+            // 检查历史是否匹配
+            let isMatch = true;
+            for (let i = 0; i < currentHistory.length; i++) {
+                if (i >= branch.moves.length || branch.moves[i] !== currentHistory[i]) {
+                    isMatch = false;
+                    break;
+                }
+            }
+            
+            // 如果匹配，添加下一步可以走的棋子位置
+            if (isMatch && currentHistory.length < branch.moves.length) {
+                const nextMove = branch.moves[currentHistory.length];
+                if (nextMove) {
+                    console.log('找到匹配分支，下一步走法:', nextMove);
+                    // 找到能够走出这个招法的棋子位置
+                    for (const move of moves) {
+                        if (move.san === nextMove) {
+                            piecePositions.add(move.from);
+                            console.log('高亮棋子位置:', move.from, '招法:', move.san);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        console.log('需要高亮的棋子位置:', Array.from(piecePositions));
+        
+        // 高亮可移动的棋子
+        piecePositions.forEach(square => {
+            this.highlightSquareNew(square, 'highlight-possible');
+        });
+    }
+
+    // 高亮指定方格（新版本）
+    highlightSquareNew(square, className) {
+        if (!this.board) return;
+
+        // 使用现有的highlightSquare函数，但需要转换类名
+        let type = 'selected';
+        if (className === 'highlight-possible') {
+            type = 'possible';
+        } else if (className === 'highlight-capture') {
+            type = 'capture';
+        }
+        
+        this.highlightSquare(square, type);
+    }
+
+    // 清除所有高亮（新版本）
+    clearHighlightsNew() {
+        if (!this.board) return;
+
+        // 使用现有的clearHighlights函数
+        this.clearHighlights();
+    }
+
+    // 检查移动是否在棋谱中
+    isMoveInNotation(move) {
+        if (!window.pgnParser || !window.pgnParser.branches) {
+            return false;
+        }
+
+        const currentHistory = this.game.history();
+        const moveIndex = currentHistory.length - 1; // 当前移动的索引
+
+        // 检查是否有任何分支包含这个移动
+        for (const branch of window.pgnParser.branches) {
+            if (moveIndex < branch.moves.length && branch.moves[moveIndex] === move.san) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    // 检查是否有任何分支完成
+    isAnyBranchCompleted() {
+        if (!window.pgnParser || !window.pgnParser.branches) {
+            return false;
+        }
+
+        const currentHistory = this.game.history();
+        
+        for (const branch of window.pgnParser.branches) {
+            if (currentHistory.length === branch.moves.length) {
+                // 检查历史是否匹配
+                let isMatch = true;
+                for (let i = 0; i < currentHistory.length; i++) {
+                    if (currentHistory[i] !== branch.moves[i]) {
+                        isMatch = false;
+                        break;
+                    }
+                }
+                if (isMatch) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    // 摆棋学习模式分支完成处理
+    onSetupLearningBranchCompleted() {
+        // 找到完成的分支信息
+        const currentHistory = this.game.history();
+        let completedBranchIndex = -1;
+        let completedBranch = null;
+        
+        for (let i = 0; i < window.pgnParser.branches.length; i++) {
+            const branch = window.pgnParser.branches[i];
+            if (currentHistory.length === branch.moves.length) {
+                let isMatch = true;
+                for (let j = 0; j < currentHistory.length; j++) {
+                    if (currentHistory[j] !== branch.moves[j]) {
+                        isMatch = false;
+                        break;
+                    }
+                }
+                if (isMatch) {
+                    completedBranchIndex = i;
+                    completedBranch = branch;
+                    break;
+                }
+            }
+        }
+        
+        let message = '🎉 恭喜！您已完成一个分支的摆棋学习！';
+        if (completedBranch) {
+            message += ` (分支 ${completedBranchIndex + 1}: ${completedBranch.moves.join(' ')})`;
+        }
+        
+        $('#errorToast').text(message).css('background', '#9C27B0').fadeIn().delay(4000).fadeOut().promise().done(() => {
+            $('#errorToast').css('background', '#ff4444');
+        });
+        
+        // 延迟后回到初始位置
+        setTimeout(() => {
+            this.resetPosition(true);
+            this.showFullNotation(); // 重新显示棋谱
+            // 重置摆棋学习的分支过滤状态
+            this.setupLearningHiddenBranches.clear();
+        }, 3000);
+    }
+
+    // 记忆学习模式分支完成处理
+    onMemoryLearningBranchCompleted() {
+        // 找到完成的分支信息
+        const currentHistory = this.game.history();
+        let completedBranchIndex = -1;
+        let completedBranch = null;
+        
+        console.log('记忆学习分支完成检测，当前历史:', currentHistory);
+        console.log('当前分支:', this.currentBranch);
+        
+        // 首先检查当前分支是否完成
+        if (this.currentBranch && currentHistory.length === this.currentBranch.moves.length) {
+            // 验证历史是否匹配
+            let isMatch = true;
+            for (let j = 0; j < currentHistory.length; j++) {
+                if (currentHistory[j] !== this.currentBranch.moves[j]) {
+                    isMatch = false;
+                    break;
+                }
+            }
+            
+            if (isMatch) {
+                // 找到对应的分支索引
+                for (let i = 0; i < window.pgnParser.branches.length; i++) {
+                    if (window.pgnParser.branches[i].id === this.currentBranch.id) {
+                        completedBranchIndex = i;
+                        completedBranch = this.currentBranch;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // 如果当前分支没有完成，尝试在所有分支中查找
+        if (!completedBranch) {
+            for (let i = 0; i < window.pgnParser.branches.length; i++) {
+                const branch = window.pgnParser.branches[i];
+                if (currentHistory.length === branch.moves.length) {
+                    let isMatch = true;
+                    for (let j = 0; j < currentHistory.length; j++) {
+                        if (currentHistory[j] !== branch.moves[j]) {
+                            isMatch = false;
+                            break;
+                        }
+                    }
+                    if (isMatch) {
+                        completedBranchIndex = i;
+                        completedBranch = branch;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        console.log('找到完成的分支:', completedBranch, '索引:', completedBranchIndex);
+        
+        if (completedBranch) {
+            const branchId = completedBranch.id || `branch_${completedBranchIndex}`;
+            
+            console.log('=== 记忆学习分支完成处理开始 ===');
+            console.log('完成的分支ID:', branchId);
+            console.log('分支索引:', completedBranchIndex);
+            console.log('错误计数:', this.errorCount);
+            console.log('当前记忆学习已完成分支数量:', this.memoryCompletedBranches.size);
+            console.log('当前记忆学习暂停分支数量:', this.memoryPausedBranches ? this.memoryPausedBranches.size : 0);
+            
+            // 检查是否有错误 - 使用记忆学习分支级别的错误计数
+            const branchErrors = this.memoryBranchErrorCounts.get(branchId) || 0;
+            if (branchErrors > 0) {
+                // 有错误，标记为暂停
+                this.memoryPausedBranches.add(branchId);
+                console.log(`记忆学习分支标记为暂停（有${branchErrors}次错误）:`, branchId);
+                const message = `⏸️ 分支 ${completedBranchIndex + 1} 记忆完成但中间有${branchErrors}次错误，已标记为暂停。`;
+                $('#errorToast').text(message).css('background', '#FF5722').fadeIn().delay(4000).fadeOut().promise().done(() => {
+                    $('#errorToast').css('background', '#ff4444');
+                });
+            } else {
+                // 无错误，标记为完成
+                this.memoryCompletedBranches.add(branchId);
+                console.log('记忆学习分支标记为完成（无错误）:', branchId);
+                console.log('更新后记忆学习已完成分支数量:', this.memoryCompletedBranches.size);
+                const message = `✅ 分支 ${completedBranchIndex + 1} 完美完成！`;
+                $('#errorToast').text(message).css('background', '#28a745').fadeIn().delay(4000).fadeOut().promise().done(() => {
+                    $('#errorToast').css('background', '#ff4444');
+                });
+            }
+            
+            // 显示记忆学习的当前正确率
+            const memoryAccuracy = this.memoryTotalMoves > 0 ? Math.round((this.memoryCorrectMoves / this.memoryTotalMoves) * 100) : 0;
+            const accuracyMessage = `记忆学习正确率：${this.memoryCorrectMoves}/${this.memoryTotalMoves} (${memoryAccuracy}%)`;
+            console.log(accuracyMessage);
+            
+            console.log('开始更新UI显示...');
+            
+            // 更新分支名称显示
+            this.updateBranchNamesDisplay();
+            console.log('分支名称显示已更新');
+            
+            // 更新进度显示
+            this.updateProgress();
+            console.log('进度显示已更新');
+            
+            // 保存分支状态到持久化存储
+            this.saveBranchStateToStorage(branchId, branchErrors > 0 ? 'paused' : 'completed');
+            console.log('分支状态已保存到持久化存储');
+            
+            console.log('=== 分支完成处理结束 ===');
+        }
+        
+        // 延迟后回到初始位置，准备下一个分支
+        setTimeout(() => {
+            this.resetPosition(true);
+            this.highlightCurrentPieces(); // 重新高亮可走棋子
+        }, 3000);
+    }
+
+    // 显示记忆学习模式的错误提示
+    showMemoryLearningError() {
+        // 注意：错误计数器已经在handleMemoryLearningMove中增加了，这里不需要重复增加
+        // this.errorCount++; // 删除这行，避免重复计数
+        
+        let errorMessage = `您走错了！这是第${this.errorCount}次错误。`;
+        
+        // 错误2次后提示正确走法
+        if (this.errorCount >= 2) {
+            // 获取按照棋谱的下一步招法
+            const nextMoves = this.getNextPossibleMoves();
+            if (nextMoves.length > 0) {
+                if (nextMoves.length === 1) {
+                    errorMessage += ` 下一步应该走: ${nextMoves[0]}`;
+                } else {
+                    errorMessage += ` 下一步可以走: ${nextMoves.join(', ')}`;
+                }
+            } else {
+                // 如果没有找到下一步招法，使用原来的方法
+                const possibleMoves = this.getPossibleMoves();
+                if (possibleMoves.length > 0) {
+                    errorMessage += ` 正确走法有: ${possibleMoves.join(', ')}`;
+                }
+            }
+            // 重置错误计数器
+            this.errorCount = 0;
+        } else {
+            errorMessage += ` 再错${2 - this.errorCount}次将提示正确走法。`;
+        }
+        
+        $('#errorToast').text(errorMessage).css('background', '#FF5722').fadeIn().delay(4000).fadeOut().promise().done(() => {
+            $('#errorToast').css('background', '#ff4444');
+        });
+    }
+
+    // 摆棋学习模式的电脑先走
+    makeFirstComputerMoveForSetupLearning() {
+        if (!this.isSetupLearningMode || !window.pgnParser || !window.pgnParser.branches) return;
+        
+        // 获取第一手可能的走法
+        const firstMoves = new Set();
+        for (const branch of window.pgnParser.branches) {
+            if (branch.moves.length > 0) {
+                firstMoves.add(branch.moves[0]);
+            }
+        }
+        
+        // 随机选择一个第一手走法
+        const firstMoveArray = Array.from(firstMoves);
+        if (firstMoveArray.length > 0) {
+            const randomFirstMove = firstMoveArray[Math.floor(Math.random() * firstMoveArray.length)];
+            
+            // 执行走棋
+            const move = this.game.move(randomFirstMove);
+            if (move) {
+                if (this.board) {
+                    this.board.position(this.game.fen()); // 更新棋盘位置
+                }
+                
+                // 更新走法历史
+                this.updateMoveHistory(move);
+                this.updateTurnIndicator();
+                
+                // 显示提示信息
+                const message = `电脑选择了走法: ${randomFirstMove}。现在轮到您走棋了！`;
+                $('#errorToast').text(message).css('background', '#17a2b8').fadeIn().delay(3000).fadeOut().promise().done(() => {
+                    $('#errorToast').css('background', '#ff4444');
+                });
+            }
+        }
+    }
+
+    // 显示所有分支名称
+    showBranchNames() {
+        if (!window.pgnParser || !window.pgnParser.branches) {
+            return;
+        }
+
+        let branchNamesHTML = '<div style="margin-bottom: 15px;"><strong>🌿 分支列表：</strong></div>';
+        
+        window.pgnParser.branches.forEach((branch, index) => {
+            const branchId = branch.id || `branch_${index}`;
+            let statusIcon = '⏳'; // 默认：待学习
+            let statusText = '待学习';
+            
+            if (this.isMemoryLearningMode) {
+                // 记忆学习模式：使用记忆学习独立的状态集合
+                if (this.memoryCompletedBranches.has(branchId)) {
+                    statusIcon = '✅';
+                    statusText = '完美完成';
+                } else if (this.memoryPausedBranches.has(branchId)) {
+                    statusIcon = '⏸️';
+                    statusText = '记忆完成但中间有错误';
+                }
+            } else {
+                // 背诵学习模式：使用背诵学习的状态集合
+                if (this.completedBranches.has(branchId)) {
+                    statusIcon = '✅';
+                    statusText = '已完成';
+                }
+            }
+            
+            branchNamesHTML += `<div class="branch-item" data-branch-id="${branchId}">`;
+            branchNamesHTML += `<span class="status-icon">${statusIcon}</span> `;
+            branchNamesHTML += `<span class="branch-name">分支 ${index + 1}</span>`;
+            branchNamesHTML += `<span class="status-text">${statusText}</span>`;
+            branchNamesHTML += '</div>';
+        });
+
+        $('#branchNames').html(branchNamesHTML).show();
+        
+        // 添加分支名称样式
+        this.addBranchNamesStyles();
+        
+        // 如果是记忆学习模式，更新视角信息
+        if (this.isMemoryLearningMode) {
+            this.updateBranchNamesWithPerspective();
+        }
+    }
+
+    // 添加分支名称显示的CSS样式
+    addBranchNamesStyles() {
+        // 检查是否已经添加了样式
+        if (document.getElementById('branch-names-styles')) {
+            return;
+        }
+        
+        const style = document.createElement('style');
+        style.id = 'branch-names-styles';
+        style.textContent = `
+            .branch-name-item {
+                transition: all 0.3s ease;
+            }
+            .branch-name-item.branch-completed {
+                background: #d4edda !important;
+                border-left-color: #28a745 !important;
+                color: #155724;
+            }
+            .branch-name-item.branch-paused {
+                background: #fff3cd !important;
+                border-left-color: #ffc107 !important;
+                color: #856404;
+            }
+            .branch-name-item.branch-pending {
+                background: #f8f9fa !important;
+                border-left-color: #6c757d !important;
+                color: #495057;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // 更新分支名称显示
+    updateBranchNamesDisplay() {
+        if (this.isMemoryLearningMode) {
+            console.log('更新分支名称显示 - 记忆学习模式');
+            console.log('当前已完成分支:', Array.from(this.completedBranches));
+            console.log('当前暂停分支:', Array.from(this.pausedBranches));
+            
+            this.showBranchNames();
+            // 注意：showBranchNames已经包含了updateBranchNamesWithPerspective的调用
+            
+            console.log('分支名称显示更新完成');
+        }
+    }
+
+    // 记忆学习模式下的电脑首步走棋
+    makeFirstComputerMoveForMemoryLearning() {
+        if (!this.isMemoryLearningMode || this.availableBranches.length === 0) {
+            console.log('记忆学习模式：无法进行电脑首步走棋 - 模式不匹配或无可用分支');
+            return;
+        }
+        
+        // 检查是否所有分支都已完成或暂停
+        const totalBranches = window.pgnParser.branches.length;
+        const completedAndPausedCount = this.completedBranches.size + (this.pausedBranches ? this.pausedBranches.size : 0);
+        
+        if (completedAndPausedCount >= totalBranches) {
+            console.log('记忆学习模式：所有分支都已完成或暂停，电脑不再自动走棋');
+            // 显示完成提示
+            const message = '🎉 恭喜！您已记忆完所有分支！';
+            $('#errorToast').text(message).css('background', '#28a745').fadeIn().delay(4000).fadeOut().promise().done(() => {
+                $('#errorToast').css('background', '#ff4444');
+            });
+            return;
+        }
+        
+        console.log('记忆学习模式：电脑首步走棋，可用分支:', this.availableBranches);
+        console.log(`分支状态：总计${totalBranches}，已完成${this.completedBranches.size}，暂停${this.pausedBranches ? this.pausedBranches.size : 0}`);
+        
+        // 获取第一手可能的走法和对应的分支
+        const firstMoveOptions = new Map(); // 走法 -> 对应的分支数组
+        
+        for (const branch of this.availableBranches) {
+            if (branch.moves.length > 0) {
+                const firstMove = branch.moves[0];
+                if (!firstMoveOptions.has(firstMove)) {
+                    firstMoveOptions.set(firstMove, []);
+                }
+                firstMoveOptions.get(firstMove).push(branch);
+            }
+        }
+        
+        // 随机选择一个走法
+        if (firstMoveOptions.size > 0) {
+            const moves = Array.from(firstMoveOptions.keys());
+            const randomMove = moves[Math.floor(Math.random() * moves.length)];
+            const correspondingBranches = firstMoveOptions.get(randomMove);
+            
+            // 选择第一个对应的分支
+            const selectedBranch = correspondingBranches[0];
+            
+            console.log('电脑选择走法:', randomMove, '对应分支:', selectedBranch);
+            
+            // 设置当前分支
+            this.currentBranch = selectedBranch;
+            
+            // 执行走棋
+            const move = this.game.move(randomMove);
+            if (move) {
+                if (this.board) {
+                    this.board.position(this.game.fen()); // 更新棋盘位置
+                }
+                
+                // 清除高亮状态（电脑移动了）
+                this.clearHighlightsNew();
+                
+                this.updateMoveHistory(move);
+                this.updateTurnIndicator();
+                this.updateAvailableBranches();
+                
+                // 重新高亮可走棋子
+                setTimeout(() => this.highlightCurrentPieces(), 100);
+                
+                // 显示提示信息
+                const message = `电脑选择了走法: ${randomMove}。现在轮到您走棋了！`;
+                $('#errorToast').text(message).css('background', '#17a2b8').fadeIn().delay(2000).fadeOut().promise().done(() => {
+                    $('#errorToast').css('background', '#ff4444');
+                });
+            }
+        }
+    }
+
+    // 检查用户视角并进行相应设置
+    checkUserPerspective() {
+        console.log('=== 检查用户视角 ===');
+        console.log('当前视角:', this.orientation);
+        console.log('可用分支数量:', this.availableBranches.length);
+        console.log('已完成分支:', Array.from(this.completedBranches));
+        console.log('暂停分支:', Array.from(this.pausedBranches));
+        
+        if (this.orientation === 'white') {
+            // 白方视角：用户先走，不需要电脑先走
+            console.log('⚪ 用户选择白方，等待用户先走棋');
+            console.log('设置当前分支为空，等待用户走棋后自动匹配');
+            // 确保当前分支为空，等待用户走棋后自动匹配
+            this.currentBranch = null;
+        } else {
+            // 黑方视角：电脑先走白方棋
+            console.log('⚫ 用户选择黑方，电脑将先走白方棋');
+            // 检查是否有可用分支
+            if (this.availableBranches.length > 0) {
+                console.log('准备电脑首步走棋，可用分支:', this.availableBranches.map(b => b.id || '未命名'));
+                // 电脑首步走棋会在resetPosition中自动调用
+            } else {
+                console.log('⚠️ 没有可用分支，无法进行记忆学习');
+            }
+        }
+        
+        console.log('=== 视角检查完成 ===');
+        
+        // 更新分支名称显示，根据视角显示不同信息
+        this.updateBranchNamesWithPerspective();
+    }
+
+    // 根据用户视角更新分支名称显示
+    updateBranchNamesWithPerspective() {
+        if (!this.isMemoryLearningMode) return;
+        
+        console.log('更新分支名称显示，当前视角:', this.orientation);
+        
+        // 只在白方视角下显示提示信息
+        let perspectiveInfo = '';
+        if (this.orientation === 'white') {
+            perspectiveInfo = '<div style="margin-bottom: 15px; padding: 8px; background: #e3f2fd; border-radius: 4px; border-left: 4px solid #2196F3;"><strong>⚪ 白方视角：</strong>您先走棋，系统将根据您的走法自动匹配分支</div>';
+        }
+        // 黑方视角不显示提示信息
+        
+        // 在分支名称前插入视角信息（如果有的话）
+        const branchNamesDiv = $('#branchNames');
+        if (branchNamesDiv.length > 0 && perspectiveInfo) {
+            const currentContent = branchNamesDiv.html();
+            // 在第一个div之前插入视角信息
+            const updatedContent = perspectiveInfo + currentContent;
+            branchNamesDiv.html(updatedContent);
+            console.log('视角信息已添加到分支名称显示');
+        } else if (branchNamesDiv.length > 0) {
+            console.log('黑方视角，不显示视角提示信息');
+        } else {
+            console.log('⚠️ 分支名称区域未找到，无法添加视角信息');
+        }
+    }
+
+    // 保存分支状态到持久化存储
+    saveBranchStateToStorage(branchId, status) {
+        try {
+            // 尝试保存到后端数据库
+            if (window.chessAPI && window.chessAPI.isBackendAvailable && window.pgnParser?.metadata?.id) {
+                this.saveBranchStateToBackend(branchId, status);
+            }
+            
+            // 同时保存到本地存储作为备份
+            this.saveBranchStateToLocalStorage(branchId, status);
+            
+            console.log(`分支状态已保存: ${branchId} -> ${status}`);
+        } catch (error) {
+            console.error('保存分支状态失败:', error);
+        }
+    }
+
+    // 保存分支状态到后端数据库
+    async saveBranchStateToBackend(branchId, status) {
+        try {
+            const response = await fetch(`${window.chessAPI.baseURL}/progress/branch-state`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                credentials: 'include',
+                body: JSON.stringify({
+                    pgn_game_id: window.pgnParser.metadata.id,
+                    branch_id: branchId,
+                    status: status,
+                    mode: 'memory_learning'
+                })
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                if (result.success) {
+                    console.log('分支状态已保存到后端:', result.message);
+                } else {
+                    console.warn('后端保存分支状态失败:', result.message);
+                }
+            } else {
+                console.warn('后端保存分支状态HTTP错误:', response.status);
+            }
+        } catch (error) {
+            console.error('后端保存分支状态网络错误:', error);
+        }
+    }
+
+    // 保存分支状态到本地存储
+    saveBranchStateToLocalStorage(branchId, status) {
+        try {
+            const storageKey = `memory_learning_${window.pgnParser?.metadata?.id || 'unknown'}`;
+            let storedData = localStorage.getItem(storageKey);
+            let branchStates = {};
+            
+            if (storedData) {
+                try {
+                    branchStates = JSON.parse(storedData);
+                } catch (e) {
+                    console.warn('解析本地存储数据失败，重置为空对象');
+                    branchStates = {};
+                }
+            }
+            
+            // 更新分支状态
+            branchStates[branchId] = {
+                status: status,
+                timestamp: Date.now(),
+                mode: 'memory_learning'
+            };
+            
+            // 保存到本地存储
+            localStorage.setItem(storageKey, JSON.stringify(branchStates));
+            console.log('分支状态已保存到本地存储:', branchId, status);
+        } catch (error) {
+            console.error('本地存储分支状态失败:', error);
+        }
+    }
+
+    // 从持久化存储恢复记忆学习的分支状态
+    restoreBranchStatesFromStorage() {
+        try {
+            const storageKey = `memory_learning_${window.pgnParser?.metadata?.id || 'unknown'}`;
+            let storedData = localStorage.getItem(storageKey);
+            let branchStates = {};
+            
+            if (storedData) {
+                try {
+                    branchStates = JSON.parse(storedData);
+                } catch (e) {
+                    console.warn('解析本地存储数据失败，重置为空对象');
+                    branchStates = {};
+                }
+            }
+            
+            console.log('从持久化存储恢复分支状态:', branchStates);
+            
+            // 遍历分支状态，恢复分支
+            for (const branchId in branchStates) {
+                const branchState = branchStates[branchId];
+                if (branchState.mode === 'memory_learning') {
+                    if (branchState.status === 'completed') {
+                        this.memoryCompletedBranches.add(branchId);
+                        console.log(`恢复记忆学习已完成分支: ${branchId}`);
+                    } else if (branchState.status === 'paused') {
+                        this.memoryPausedBranches.add(branchId);
+                        console.log(`恢复记忆学习暂停分支: ${branchId}`);
+                    }
+                }
+            }
+            
+            console.log('恢复完成后的记忆学习分支状态:');
+            console.log('- 已完成分支:', Array.from(this.memoryCompletedBranches));
+            console.log('- 暂停分支:', Array.from(this.memoryPausedBranches));
+            
+        } catch (error) {
+            console.error('从本地存储恢复分支状态失败:', error);
+        }
+    }
+
+    // 清理本地存储的分支状态
+    clearBranchStatesFromStorage() {
+        localStorage.removeItem(`memory_learning_${window.pgnParser?.metadata?.id || 'unknown'}`);
+        console.log('本地存储的分支状态已清理');
+    }
+    
+    // 通用的记忆学习进度清理函数
+    clearAllMemoryLearningProgress() {
+        try {
+            if (!window.pgnParser?.metadata?.id) {
+                console.log('没有PGN数据，无法清理记忆学习进度');
+                return;
+            }
+            
+            const pgnId = window.pgnParser.metadata.id;
+            const pgnFilename = window.pgnParser.metadata.filename || pgnId;
+            
+            console.log('开始清理记忆学习进度...');
+            console.log('PGN ID:', pgnId);
+            console.log('PGN 文件名:', pgnFilename);
+            
+            // 清理所有可能的记忆学习进度存储
+            const allKeys = Object.keys(localStorage);
+            const memoryLearningKeys = allKeys.filter(key => 
+                key.startsWith('memory_learning_') && 
+                (key.includes(pgnId.toString()) || key.includes(pgnFilename))
+            );
+            
+            console.log('找到的记忆学习进度存储键:', memoryLearningKeys);
+            
+            memoryLearningKeys.forEach(key => {
+                localStorage.removeItem(key);
+                console.log(`已清理: ${key}`);
+            });
+            
+            // 清空当前的分支状态
+            this.memoryCompletedBranches.clear();
+            this.memoryPausedBranches.clear();
+            this.memoryBranchErrorCounts.clear();
+            
+            console.log(`记忆学习进度清理完成，共清理了 ${memoryLearningKeys.length} 个存储项`);
+            
+            // 更新UI显示
+            this.updateProgress();
+            this.updateBranchNamesDisplay();
+            
+        } catch (error) {
+            console.error('清理记忆学习进度失败:', error);
+        }
+    }
+
+    // 强制刷新棋谱显示（用于移动端显示问题）
+    forceRefreshNotation() {
+        console.log('forceRefreshNotation: 强制刷新棋谱显示');
+        
+        if (!window.pgnParser || !window.pgnParser.branches) {
+            console.log('没有PGN数据，无法刷新棋谱');
+            return;
+        }
+        
+        // 清空现有内容
+        const moveHistoryElement = $('#moveHistory');
+        if (moveHistoryElement.length > 0) {
+            moveHistoryElement.empty();
+            console.log('已清空moveHistory区域');
+        }
+        
+        // 重新显示棋谱
+        if (this.isSetupLearningMode) {
+            console.log('摆棋学习模式：重新显示完整棋谱');
+            this.showFullNotation();
+        } else if (this.isMemoryLearningMode) {
+            console.log('记忆学习模式：重新显示分支名称');
+            this.showBranchNames();
+        }
+        
+        // 添加CSS样式
+        this.addNotationStyles();
+        
+        console.log('棋谱显示强制刷新完成');
     }
 } 
