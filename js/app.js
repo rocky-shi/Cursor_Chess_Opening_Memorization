@@ -151,8 +151,51 @@ $(document).ready(function() {
 
     // 重置位置
     $('#resetPosition').click(function() {
-        // 重置位置但不重置正确率（保持累积）
-        window.chessBoard.resetPosition(false);
+        console.log('回到初始位置按钮被点击');
+        
+        // 检查当前学习模式
+        const isSetupLearning = window.chessBoard.isSetupLearningMode;
+        const isMemoryLearning = window.chessBoard.isMemoryLearningMode;
+        const isStudyMode = window.chessBoard.isStudyMode;
+        
+        if (isSetupLearning) {
+            console.log('摆棋学习模式：回到初始位置');
+            
+            // 检查是否有分支完成
+            const completedBranch = window.chessBoard.checkForCompletedBranches();
+            let notificationMessage = '✅ 已回到初始位置，所有分支现在都可用';
+            
+            if (completedBranch) {
+                notificationMessage = `✅ 已回到初始位置，分支 ${completedBranch.branchIndex + 1} 已完成，所有分支现在都可用`;
+            }
+            
+            // 摆棋学习模式：重置位置并清空隐藏分支状态
+            window.chessBoard.resetPosition(false);
+            
+            // 显示成功提示
+            showNotification(notificationMessage, 'success');
+        } else if (isMemoryLearning) {
+            console.log('记忆学习模式：回到初始位置');
+            // 记忆学习模式：重置位置但保留学习进度
+            window.chessBoard.resetPosition(false);
+            
+            // 显示成功提示
+            showNotification('✅ 已回到初始位置，记忆学习进度已保留', 'success');
+        } else if (isStudyMode) {
+            console.log('背诵学习模式：回到初始位置');
+            // 背诵学习模式：重置位置但不重置正确率（保持累积）
+            window.chessBoard.resetPosition(false);
+            
+            // 显示成功提示
+            showNotification('✅ 已回到初始位置，背诵进度已保留', 'success');
+        } else {
+            console.log('自由模式：回到初始位置');
+            // 自由模式：简单重置位置
+            window.chessBoard.resetPosition(false);
+            
+            // 显示成功提示
+            showNotification('✅ 已回到初始位置', 'success');
+        }
     });
 
     // 完全重置
