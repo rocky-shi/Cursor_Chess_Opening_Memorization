@@ -148,6 +148,12 @@ $(document).ready(function() {
             updateButtonStates();
         }
     });
+    
+    // 绑定"从公共部分开始"复选框事件
+    $('#startFromCommon').change(function() {
+        window.chessBoard.startFromCommon = $(this).is(':checked');
+        console.log('从公共部分开始选项已', window.chessBoard.startFromCommon ? '启用' : '禁用');
+    });
 
     // 重置位置
     $('#resetPosition').click(function() {
@@ -339,6 +345,9 @@ $(document).ready(function() {
                         // 重新加载用户进度
                         await window.chessBoard.loadUserProgress();
                         
+                        // 隐藏完成横幅
+                        $('#completionBanner').hide();
+                        
                         // 强制更新所有UI显示
                         window.chessBoard.updateProgress();
                         window.chessBoard.updateAccuracy();
@@ -378,6 +387,9 @@ $(document).ready(function() {
         window.chessBoard.totalMoves = 0;
         window.chessBoard.memoryCorrectMoves = 0;
         window.chessBoard.memoryTotalMoves = 0;
+        
+        // 隐藏完成横幅
+        $('#completionBanner').hide();
         
         // 重置游戏状态
         window.chessBoard.resetPosition(true);

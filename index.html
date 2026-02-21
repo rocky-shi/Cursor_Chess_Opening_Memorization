@@ -207,6 +207,13 @@
             display: flex;
             gap: 20px;
             margin-top: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        /* 记忆学习选项 */
+        .memory-learning-options {
+            margin-left: 0;
         }
         
         .color-selection label {
@@ -270,6 +277,37 @@
         .status-display span {
             font-weight: 700;
             color: #2196F3;
+        }
+        
+        /* 分支列表 */
+        .branch-names {
+            background: linear-gradient(145deg, #f8f9fa, #e9ecef);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            border-left: 4px solid #28a745;
+            min-height: 200px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-size: 14px;
+        }
+        
+        .branch-names::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        .branch-names::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+        
+        .branch-names::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        
+        .branch-names::-webkit-scrollbar-thumb:hover {
+            background: #555;
         }
         
         /* 走法历史 */
@@ -790,14 +828,34 @@
             /* 颜色选择优化 */
             .color-selection {
                 justify-content: center;
-                gap: 1rem;
+                gap: 0.8rem;
                 margin-top: 10px;
+                flex-wrap: wrap;
             }
 
             .color-selection label {
                 padding: 8px 12px;
                 font-size: 12px;
                 white-space: nowrap;
+            }
+            
+            /* 记忆学习选项移动端优化 */
+            .memory-learning-options {
+                width: 100%;
+                margin-top: 0.5rem;
+            }
+            
+            .memory-learning-options label {
+                font-size: 12px;
+                padding: 6px 10px;
+            }
+            
+            /* 分支列表移动端优化 */
+            .branch-names {
+                max-height: 150px;
+                min-height: 150px;
+                font-size: 12px;
+                padding: 15px;
             }
 
             /* 状态显示移动端优化 */
@@ -968,13 +1026,18 @@
                 <button id="resetAll">🔄 重置进度</button>
                 <button id="hardResetAll">🗑️ 彻底重置</button>
             </div>
-            <div class="color-selection">
+            <div class="color-selection" id="colorSelection">
                 <label>
                     <input type="radio" name="color" value="white" checked> ⚪ 白方
                 </label>
                 <label>
                     <input type="radio" name="color" value="black"> ⚫ 黑方
                 </label>
+                <div class="memory-learning-options" id="memoryLearningOptions" style="display: none;">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500; color: #333; background: rgba(255, 255, 255, 0.9); padding: 8px 16px; border-radius: 6px;">
+                        <input type="checkbox" id="startFromCommon"> 从公共部分开始
+                    </label>
+                </div>
             </div>
         </div>
         

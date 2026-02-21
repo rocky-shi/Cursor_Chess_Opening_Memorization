@@ -34,6 +34,9 @@ class ChessBoard {
         
         // 分支错误计数
         this.memoryBranchErrorCounts = new Map(); // 记忆学习分支错误计数
+        
+        // 记忆学习模式选项
+        this.startFromCommon = false; // 是否从公共部分开始
     }
 
     init() {
@@ -890,9 +893,9 @@ class ChessBoard {
             
             // 如果用户选择黑方，电脑先走白方棋
             if (this.orientation === 'black' && this.availableBranches.length > 0) {
-                // 检查是否所有分支都已完成或暂停
+                // 检查是否所有分支都已完成或暂停（记忆学习模式使用记忆学习的状态集合）
                 const totalBranches = window.pgnParser.branches.length;
-                const completedAndPausedCount = this.completedBranches.size + (this.pausedBranches ? this.pausedBranches.size : 0);
+                const completedAndPausedCount = this.memoryCompletedBranches.size + (this.memoryPausedBranches ? this.memoryPausedBranches.size : 0);
                 
                 if (completedAndPausedCount >= totalBranches) {
                     console.log('记忆学习模式黑方视角：所有分支都已完成或暂停，电脑不再自动走棋');
@@ -1027,6 +1030,9 @@ class ChessBoard {
             // 显示恭喜信息，并从后端获取真实的累积正确率
             console.log('所有分支已完成，显示完成横幅');
             this.showCompletionBanner();
+        } else {
+            // 进度不是100%，隐藏完成横幅
+            $('#completionBanner').hide();
         }
         
         console.log('=== 进度显示更新完成 ===');
@@ -1434,6 +1440,9 @@ class ChessBoard {
         console.log('点击走棋支持状态:', this.clickToMove);
         console.log('棋盘元素状态:', !!this.board);
         
+        // 显示记忆学习选项
+        $('#memoryLearningOptions').show();
+        
         $('#errorToast').text(message).css('background', '#FF5722').fadeIn().delay(4000).fadeOut().promise().done(() => {
             $('#errorToast').css('background', '#ff4444');
         });
@@ -1457,6 +1466,9 @@ class ChessBoard {
         this.errorCount = 0; // 重置错误计数器
         this.branchErrorCounts.clear(); // 重置分支级别错误计数
         this.memoryBranchErrorCounts.clear(); // 重置记忆学习分支级别错误计数
+        
+        // 隐藏记忆学习选项
+        $('#memoryLearningOptions').hide();
         
         // 清理摆棋学习的分支过滤状态
         this.setupLearningHiddenBranches.clear();
@@ -2734,6 +2746,223 @@ class ChessBoard {
         console.log('摆棋学习模式：分支完成，等待用户手动回到初始位置');
     }
 
+    // 查找两个分支的公共部分
+    findCommonPrefix(branch1, branch2) {
+        if (!branch1 || !branch2 || !branch1.moves || !branch2.moves) {
+            return [];
+        }
+        
+        const commonMoves = [];
+        const minLength = Math.min(branch1.moves.length, branch2.moves.length);
+        
+        for (let i = 0; i < minLength; i++) {
+            if (branch1.moves[i] === branch2.moves[i]) {
+                commonMoves.push(branch1.moves[i]);
+            } else {
+                break;
+            }
+        }
+        
+        return commonMoves;
+    }
+    
+    // 找到下一个可用分支
+    findNextAvailableBranch(currentBranch) {
+        if (!currentBranch || !window.pgnParser || !window.pgnParser.branches) {
+            return null;
+        }
+        
+        const currentBranchId = currentBranch.id;
+        const allBranches = window.pgnParser.branches;
+        
+        // 找到下一个未完成且未暂停的分支
+        for (const branch of allBranches) {
+            const branchId = branch.id || `branch_${allBranches.indexOf(branch)}`;
+            
+            // 跳过当前分支
+            if (branchId === currentBranchId) {
+                continue;
+            }
+            
+            // 跳过已完成和暂停的分支
+            if (this.memoryCompletedBranches.has(branchId) || 
+                (this.memoryPausedBranches && this.memoryPausedBranches.has(branchId))) {
+                continue;
+            }
+            
+            return branch;
+        }
+        
+        return null;
+    }
+    
+    // 从指定步数开始设置棋盘位置
+    resetToPosition(commonMoves, nextBranch) {
+        // 清除选择状态
+        this.deselectSquare();
+        
+        // 重置到初始位置
+        this.game.reset();
+        if (this.board) {
+            this.board.position('start');
+        }
+        
+        // 清空历史显示
+        $('#moveHistory').empty();
+        
+        // 如果commonMoves为空，直接返回
+        if (!commonMoves || commonMoves.length === 0) {
+            this.currentBranch = null;
+            this.errorCount = 0;
+            this.updateTurnIndicator();
+            this.updateAvailableBranches();
+            this.highlightCurrentPieces();
+            return;
+        }
+        
+        // 使用nextBranch来执行公共部分的步数
+        if (nextBranch && nextBranch.moves.length >= commonMoves.length) {
+            // 执行公共部分的所有步数
+            for (let i = 0; i < commonMoves.length; i++) {
+                try {
+                    const move = this.game.move(commonMoves[i]);
+                    if (!move) {
+                        console.error('无法执行移动:', commonMoves[i]);
+                        break;
+                    }
+                } catch (e) {
+                    console.error('执行移动时出错:', e);
+                    break;
+                }
+            }
+            
+            // 更新棋盘显示
+            if (this.board) {
+                this.board.position(this.game.fen());
+            }
+            
+            // 更新当前分支为下一个分支
+            this.currentBranch = nextBranch;
+            this.errorCount = 0;
+            
+            // 根据游戏历史更新显示
+            const history = this.game.history();
+            $('#moveHistory').empty();
+            for (let i = 0; i < history.length; i++) {
+                const moveNumber = Math.ceil((i + 1) / 2);
+                const isWhiteMove = (i + 1) % 2 === 1;
+                let moveText = '';
+                if (isWhiteMove) {
+                    moveText = `${moveNumber}. ${history[i]}`;
+                } else {
+                    moveText = ` ${history[i]}`;
+                }
+                $('#moveHistory').append(`<span class="move-pair">${moveText}</span>`);
+            }
+            
+            this.updateTurnIndicator();
+            this.updateAvailableBranches();
+            
+            // 如果用户是黑方视角，且当前轮到白方走棋，需要自动走白方的下一步
+            // 如果用户是白方视角，且当前轮到黑方走棋，需要自动走黑方的下一步
+            if (this.isMemoryLearningMode) {
+                const currentTurn = this.game.turn();
+                const nextMoveIndex = commonMoves.length;
+                
+                if (this.orientation === 'black' && currentTurn === 'w') {
+                    // 黑方视角：轮到白方走棋，需要自动走下一步
+                    if (nextBranch.moves.length > nextMoveIndex) {
+                        const nextMove = nextBranch.moves[nextMoveIndex];
+                        console.log('从公共部分开始：黑方视角，自动走白方下一步:', nextMove);
+                        
+                        // 延迟执行，确保UI更新完成
+                        setTimeout(() => {
+                            const move = this.game.move(nextMove);
+                            if (move) {
+                                if (this.board) {
+                                    this.board.position(this.game.fen());
+                                }
+                                
+                                // 清除高亮状态（电脑移动了）
+                                this.clearHighlightsNew();
+                                
+                                this.updateMoveHistory(move);
+                                this.updateTurnIndicator();
+                                this.updateAvailableBranches();
+                                
+                                // 重新高亮可走棋子
+                                setTimeout(() => this.highlightCurrentPieces(), 100);
+                                
+                                // 显示提示信息
+                                const message = `电脑选择了走法: ${nextMove}。现在轮到您走棋了！`;
+                                $('#errorToast').text(message).css('background', '#17a2b8').fadeIn().delay(2000).fadeOut().promise().done(() => {
+                                    $('#errorToast').css('background', '#ff4444');
+                                });
+                            }
+                        }, 500);
+                    } else {
+                        // 没有下一步了，直接高亮
+                        this.highlightCurrentPieces();
+                    }
+                } else if (this.orientation === 'white' && currentTurn === 'b') {
+                    // 白方视角：轮到黑方走棋，需要自动走下一步
+                    if (nextBranch.moves.length > nextMoveIndex) {
+                        const nextMove = nextBranch.moves[nextMoveIndex];
+                        console.log('从公共部分开始：白方视角，自动走黑方下一步:', nextMove);
+                        
+                        // 延迟执行，确保UI更新完成
+                        setTimeout(() => {
+                            const move = this.game.move(nextMove);
+                            if (move) {
+                                if (this.board) {
+                                    this.board.position(this.game.fen());
+                                }
+                                
+                                // 清除高亮状态（电脑移动了）
+                                this.clearHighlightsNew();
+                                
+                                this.updateMoveHistory(move);
+                                this.updateTurnIndicator();
+                                this.updateAvailableBranches();
+                                
+                                // 重新高亮可走棋子
+                                setTimeout(() => this.highlightCurrentPieces(), 100);
+                                
+                                // 显示提示信息
+                                const message = `电脑选择了走法: ${nextMove}。现在轮到您走棋了！`;
+                                $('#errorToast').text(message).css('background', '#17a2b8').fadeIn().delay(2000).fadeOut().promise().done(() => {
+                                    $('#errorToast').css('background', '#ff4444');
+                                });
+                            }
+                        }, 500);
+                    } else {
+                        // 没有下一步了，直接高亮
+                        this.highlightCurrentPieces();
+                    }
+                } else {
+                    // 轮到用户走棋，直接高亮
+                    this.highlightCurrentPieces();
+                }
+            } else {
+                // 非记忆学习模式，直接高亮
+                this.highlightCurrentPieces();
+            }
+        } else {
+            // 如果无法找到合适的分支，回到初始位置
+            this.currentBranch = null;
+            this.errorCount = 0;
+            this.updateTurnIndicator();
+            this.updateAvailableBranches();
+            
+            // 如果用户是黑方视角，需要自动走第一步
+            if (this.orientation === 'black' && this.isMemoryLearningMode && this.availableBranches.length > 0) {
+                setTimeout(() => this.makeFirstComputerMoveForMemoryLearning(), 500);
+            } else {
+                this.highlightCurrentPieces();
+            }
+        }
+    }
+
     // 记忆学习模式分支完成处理
     onMemoryLearningBranchCompleted() {
         // 找到完成的分支信息
@@ -2843,10 +3072,39 @@ class ChessBoard {
             console.log('=== 分支完成处理结束 ===');
         }
         
-        // 延迟后回到初始位置，准备下一个分支
+        // 延迟后准备下一个分支
         setTimeout(() => {
-            this.resetPosition(true);
-            this.highlightCurrentPieces(); // 重新高亮可走棋子
+            if (this.startFromCommon && completedBranch) {
+                // 如果启用了"从公共部分开始"选项
+                const nextBranch = this.findNextAvailableBranch(completedBranch);
+                
+                if (nextBranch) {
+                    // 找到两个分支的公共部分
+                    const commonMoves = this.findCommonPrefix(completedBranch, nextBranch);
+                    console.log('找到公共部分，步数:', commonMoves.length);
+                    console.log('公共部分:', commonMoves);
+                    
+                    if (commonMoves.length > 0) {
+                        // 从公共部分的最后一步开始（即公共部分的长度）
+                        console.log('从公共部分开始，步数:', commonMoves.length);
+                        this.resetToPosition(commonMoves, nextBranch);
+                    } else {
+                        // 没有公共部分，从初始位置开始
+                        console.log('没有公共部分，从初始位置开始');
+                        this.resetPosition(true);
+                        this.highlightCurrentPieces();
+                    }
+                } else {
+                    // 没有下一个分支，回到初始位置
+                    console.log('没有下一个可用分支，回到初始位置');
+                    this.resetPosition(true);
+                    this.highlightCurrentPieces();
+                }
+            } else {
+                // 未启用"从公共部分开始"选项，正常回到初始位置
+                this.resetPosition(true);
+                this.highlightCurrentPieces();
+            }
         }, 3000);
     }
 
@@ -3023,9 +3281,9 @@ class ChessBoard {
             return;
         }
         
-        // 检查是否所有分支都已完成或暂停
+        // 检查是否所有分支都已完成或暂停（记忆学习模式使用记忆学习的状态集合）
         const totalBranches = window.pgnParser.branches.length;
-        const completedAndPausedCount = this.completedBranches.size + (this.pausedBranches ? this.pausedBranches.size : 0);
+        const completedAndPausedCount = this.memoryCompletedBranches.size + (this.memoryPausedBranches ? this.memoryPausedBranches.size : 0);
         
         if (completedAndPausedCount >= totalBranches) {
             console.log('记忆学习模式：所有分支都已完成或暂停，电脑不再自动走棋');
@@ -3038,7 +3296,7 @@ class ChessBoard {
         }
         
         console.log('记忆学习模式：电脑首步走棋，可用分支:', this.availableBranches);
-        console.log(`分支状态：总计${totalBranches}，已完成${this.completedBranches.size}，暂停${this.pausedBranches ? this.pausedBranches.size : 0}`);
+        console.log(`分支状态：总计${totalBranches}，已完成${this.memoryCompletedBranches.size}，暂停${this.memoryPausedBranches ? this.memoryPausedBranches.size : 0}`);
         
         // 获取第一手可能的走法和对应的分支
         const firstMoveOptions = new Map(); // 走法 -> 对应的分支数组
