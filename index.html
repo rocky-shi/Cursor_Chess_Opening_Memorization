@@ -340,6 +340,27 @@
         .move-history::-webkit-scrollbar-thumb:hover {
             background: #555;
         }
+
+        .setup-learning-nav {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            margin-bottom: 12px;
+            flex-wrap: wrap;
+        }
+        .setup-learning-nav button {
+            padding: 8px 16px;
+            border-radius: 6px;
+            border: 1px solid #2196F3;
+            background: #fff;
+            color: #1976D2;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .setup-learning-nav button:hover {
+            background: #e3f2fd;
+        }
         
         .move-pair {
             display: inline-block;
@@ -1054,6 +1075,10 @@
                     🎉 恭喜！您已背完所有分支！
                 </div>
                 <div class="branch-names" id="branchNames" style="display: none;"></div>
+                <div class="setup-learning-nav" id="setupLearningNav" style="display: none;">
+                    <button type="button" id="setupLearningPrev" title="沿序号最小的匹配分支后退一步">◀ 前一步</button>
+                    <button type="button" id="setupLearningNext" title="沿序号最小的匹配分支前进一步">下一步 ▶</button>
+                </div>
                 <div class="move-history" id="moveHistory"></div>
             </div>
         </div>

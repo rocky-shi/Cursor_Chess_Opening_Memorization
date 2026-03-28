@@ -106,6 +106,17 @@ $(document).ready(function() {
         }
     });
 
+    $('#setupLearningPrev').on('click', function() {
+        if (window.chessBoard && window.chessBoard.isSetupLearningMode) {
+            window.chessBoard.setupLearningStepPrev();
+        }
+    });
+    $('#setupLearningNext').on('click', function() {
+        if (window.chessBoard && window.chessBoard.isSetupLearningMode) {
+            window.chessBoard.setupLearningStepNext();
+        }
+    });
+
     // 摆棋学习
     $('#setupLearning').click(async function() {
         console.log('摆棋学习按钮被点击');
@@ -127,7 +138,7 @@ $(document).ready(function() {
                     
                     console.log('移动端棋谱显示检查:');
                     console.log('分支元素数量:', branchElements.length);
-                    console.log('预期分支数量:', window.pgnParser?.branches?.length || 0);
+                    console.log('PGN 总分支数:', window.pgnParser?.branches?.length || 0, '（摆棋学习显示全部分支，主参考线为序号最小匹配分支）');
                     
                     if (branchElements.length === 0) {
                         console.warn('移动端：没有找到分支元素，尝试强制刷新');
@@ -166,13 +177,12 @@ $(document).ready(function() {
         
         if (isSetupLearning) {
             console.log('摆棋学习模式：回到初始位置');
-            
-            // 检查是否有分支完成
+
             const completedBranch = window.chessBoard.checkForCompletedBranches();
-            let notificationMessage = '✅ 已回到初始位置，所有分支现在都可用';
-            
+            let notificationMessage =
+                '✅ 已回到初始位置。可自由选择任意未完成分支；本局已走完的分支仍计为已完成';
             if (completedBranch) {
-                notificationMessage = `✅ 已回到初始位置，分支 ${completedBranch.branchIndex + 1} 已完成，所有分支现在都可用`;
+                notificationMessage = `✅ 已回到初始位置（局面在终点时检测到分支 ${completedBranch.branchIndex + 1}）。已解除「下一分支」顺序锁定，可练任意未完成分支`;
             }
             
             // 摆棋学习模式：重置位置并清空隐藏分支状态

@@ -30,7 +30,9 @@ class ChessBoard {
         this.memoryPausedBranches = new Set();    // 记忆学习暂停的分支
         
         // 摆棋学习模式的分支过滤管理
-        this.setupLearningHiddenBranches = new Set(); // 摆棋学习中已隐藏的分支
+        this.setupLearningHiddenBranches = new Set(); // 摆棋学习中已隐藏的分支（不匹配当前历史的分支）
+        this.setupLearningCompletedBranchIds = new Set(); // 本局摆棋学习已走完的分支 id
+        this.setupLearningTargetBranchIndex = null; // 非 null 时只练该序号分支（完成一分支后自动设为「下一个」）
         
         // 分支错误计数
         this.memoryBranchErrorCounts = new Map(); // 记忆学习分支错误计数
@@ -291,8 +293,12 @@ class ChessBoard {
                 }
             }
             
-            if (isMatch) {
-                // 这个分支匹配当前历史
+            if (
+                isMatch &&
+                !this.setupLearningCompletedBranchIds.has(branchId) &&
+                (this.setupLearningTargetBranchIndex === null || i === this.setupLearningTargetBranchIndex)
+            ) {
+                // 这个分支匹配当前历史，且未标记完成、且符合当前顺序目标
                 matchingBranches.push(branch);
                 
                 // 如果之前是隐藏的，现在需要恢复
@@ -338,9 +344,6 @@ class ChessBoard {
         // 更新UI显示
         this.updateMoveHistory(move);
         this.updateTurnIndicator();
-        
-        // 更新棋谱显示，高亮当前走法
-        this.updateSetupLearningNotation();
         
         // 如果有分支恢复，显示提示
         if (newlyRestoredBranches.length > 0) {
@@ -750,49 +753,22 @@ class ChessBoard {
     }
 
     updateMoveHistory(move) {
+        if (this.isSetupLearningMode) {
+            // 不重绘后滚到底部（会停在最大分支编号处）；滚动由 highlight 里对齐「序号最小」主分支
+            this.showFullNotation();
+            return;
+        }
+
         const moveNumber = Math.ceil(this.game.history().length / 2);
         const isWhiteMove = this.game.history().length % 2 === 1;
-        
-        let moveText = '';
-        if (isWhiteMove) {
-            moveText = `${moveNumber}. ${move.san}`;
-        } else {
-            moveText = `${move.san}`;
+        const moveText = isWhiteMove ? `${moveNumber}. ${move.san}` : `${move.san}`;
+
+        $('#moveHistory').append(`<span class="move-pair">${moveText}</span>`);
+
+        const mh = $('#moveHistory')[0];
+        if (mh) {
+            mh.scrollTop = mh.scrollHeight;
         }
-        
-        // 如果是摆棋学习模式，在棋谱下方添加走法历史
-        if (this.isSetupLearningMode) {
-            // 检查是否已经有走法历史区域
-            let historyContainer = $('#moveHistory').find('.move-history-container');
-            if (historyContainer.length === 0) {
-                // 创建走法历史容器
-                historyContainer = $('<div class="move-history-container" style="margin-top: 20px; padding-top: 15px; border-top: 2px solid #dee2e6;"><strong>📝 当前走法历史：</strong><div class="current-moves"></div></div>');
-                $('#moveHistory').append(historyContainer);
-            }
-            
-            // 添加新的走法
-            const movesContainer = historyContainer.find('.current-moves');
-            if (isWhiteMove) {
-                movesContainer.append(`<span class="move-pair">${moveText}</span>`);
-            } else {
-                // 找到最后一个白方走法，在其后添加黑方走法
-                const lastWhiteMove = movesContainer.find('.move-pair').last();
-                if (lastWhiteMove.length > 0) {
-                    lastWhiteMove.append(` ${move.san}`);
-                } else {
-                    movesContainer.append(`<span class="move-pair">... ${move.san}</span>`);
-                }
-            }
-            
-            // 更新棋谱显示
-            this.updateSetupLearningNotation();
-        } else {
-            // 非摆棋学习模式，使用原来的方式
-            $('#moveHistory').append(`<span class="move-pair">${moveText}</span>`);
-        }
-        
-        // 滚动到底部
-        $('#moveHistory').scrollTop($('#moveHistory')[0].scrollHeight);
     }
 
     showError() {
@@ -860,17 +836,17 @@ class ChessBoard {
             }
         } else if (this.isSetupLearningMode) {
             console.log('摆棋学习模式：重置位置和状态');
-            
-            // 清理分支过滤状态，重新开始
+
+            // 回到初始位置后解除「只练某一顺序分支」限制，仍可练任意未完成分支
+            this.setupLearningTargetBranchIndex = null;
+
             const hiddenCount = this.setupLearningHiddenBranches.size;
             this.setupLearningHiddenBranches.clear();
             console.log(`已清空 ${hiddenCount} 个隐藏分支`);
-            
-            // 重置可用分支列表为所有分支
-            this.availableBranches = [...window.pgnParser.branches];
-            console.log(`已重置可用分支列表，共 ${this.availableBranches.length} 个分支`);
-            
-            // 重新显示完整棋谱
+
+            this.recomputeSetupLearningAvailableAndHidden();
+            console.log(`已按未完成分支重算可用列表，共 ${this.availableBranches.length} 个分支`);
+
             this.showFullNotation();
             
             // 如果用户选择黑方，电脑先走
@@ -1003,6 +979,8 @@ class ChessBoard {
         if (this.isMemoryLearningMode) {
             // 记忆学习模式：使用记忆学习独立的状态集合
             completed = this.memoryCompletedBranches.size + (this.memoryPausedBranches ? this.memoryPausedBranches.size : 0);
+        } else if (this.isSetupLearningMode) {
+            completed = this.setupLearningCompletedBranchIds.size;
         } else {
             // 背谱模式：使用背诵学习的状态集合
             completed = this.completedBranches.size;
@@ -1018,6 +996,8 @@ class ChessBoard {
         if (this.isMemoryLearningMode) {
             console.log('记忆学习模式 - 已完成分支列表:', Array.from(this.memoryCompletedBranches));
             console.log('记忆学习模式 - 暂停分支列表:', Array.from(this.memoryPausedBranches || []));
+        } else if (this.isSetupLearningMode) {
+            console.log('摆棋学习 - 本局已走完分支:', Array.from(this.setupLearningCompletedBranchIds));
         } else {
             console.log('背诵学习模式 - 已完成分支列表:', Array.from(this.completedBranches));
         }
@@ -1083,7 +1063,13 @@ class ChessBoard {
         $('#completionBanner').show();
         
         // 尝试从后端获取真实的累积正确率
-        if (window.currentPgnId && window.chessAPI && window.chessAPI.isBackendAvailable && !this.isMemoryLearningMode) {
+        if (
+            window.currentPgnId &&
+            window.chessAPI &&
+            window.chessAPI.isBackendAvailable &&
+            !this.isMemoryLearningMode &&
+            !this.isSetupLearningMode
+        ) {
             try {
                 const response = await fetch(`${window.chessAPI.baseURL}/progress/current-stats/${window.currentPgnId}`, {
                     credentials: 'include'
@@ -1246,7 +1232,10 @@ class ChessBoard {
         }
 
         this.isStudyMode = true;
-        
+        this.isSetupLearningMode = false;
+        this.isMemoryLearningMode = false;
+        $('#setupLearningNav').hide();
+
         // 加载用户进度
         await this.loadUserProgress();
         
@@ -1312,8 +1301,9 @@ class ChessBoard {
         
         // 初始化摆棋学习的分支过滤状态
         this.setupLearningHiddenBranches.clear();
-        this.availableBranches = [...window.pgnParser.branches]; // 复制所有分支作为初始可用分支
-        
+        this.setupLearningCompletedBranchIds.clear();
+        this.setupLearningTargetBranchIndex = null;
+
         // 重置正确率统计
         this.correctMoves = 0;
         this.totalMoves = 0;
@@ -1327,14 +1317,16 @@ class ChessBoard {
         // 重置棋盘位置
         this.resetPosition(true);
         
-        // 显示完整棋谱
+        // 显示完整棋谱（摆棋学习：仍显示全部分支，主参考线为序号最小匹配分支）
         this.showFullNotation();
+
+        $('#setupLearningNav').css('display', 'flex');
         
         // 移动端棋谱显示验证
         setTimeout(() => {
             const moveHistoryElement = $('#moveHistory');
             const branchElements = moveHistoryElement.find('[id^="branch-"]');
-            const notationTitle = moveHistoryElement.find('strong:contains("📚 完整棋谱：")');
+            const notationTitle = moveHistoryElement.find('strong:contains("棋谱")');
             
             console.log('摆棋学习启动后棋谱显示验证:');
             console.log('moveHistory元素存在:', moveHistoryElement.length > 0);
@@ -1383,7 +1375,8 @@ class ChessBoard {
         this.isMemoryLearningMode = true;
         this.isStudyMode = false;
         this.isSetupLearningMode = false;
-        
+        $('#setupLearningNav').hide();
+
         // 加载用户进度
         await this.loadUserProgress();
         
@@ -1472,6 +1465,8 @@ class ChessBoard {
         
         // 清理摆棋学习的分支过滤状态
         this.setupLearningHiddenBranches.clear();
+        this.setupLearningCompletedBranchIds.clear();
+        this.setupLearningTargetBranchIndex = null;
         
         // 重置正确率统计
         this.correctMoves = 0;
@@ -2314,6 +2309,214 @@ class ChessBoard {
         }
     }
 
+    // 根据当前棋盘历史重算摆棋学习的可用/隐藏分支（与 handleSetupLearningMove 判定一致）
+    recomputeSetupLearningAvailableAndHidden() {
+        if (!window.pgnParser || !window.pgnParser.branches) return;
+        const currentHistory = this.game.history();
+        this.setupLearningHiddenBranches.clear();
+        this.availableBranches = [];
+        for (let i = 0; i < window.pgnParser.branches.length; i++) {
+            const branch = window.pgnParser.branches[i];
+            const branchId = branch.id || `branch_${i}`;
+            if (this.setupLearningCompletedBranchIds.has(branchId)) {
+                this.setupLearningHiddenBranches.add(branchId);
+                continue;
+            }
+            if (this.setupLearningTargetBranchIndex !== null && i !== this.setupLearningTargetBranchIndex) {
+                this.setupLearningHiddenBranches.add(branchId);
+                continue;
+            }
+            let isMatch = true;
+            for (let j = 0; j < currentHistory.length; j++) {
+                if (j >= branch.moves.length || branch.moves[j] !== currentHistory[j]) {
+                    isMatch = false;
+                    break;
+                }
+            }
+            if (!isMatch) {
+                this.setupLearningHiddenBranches.add(branchId);
+            } else {
+                this.availableBranches.push(branch);
+            }
+        }
+    }
+
+    // 完成当前分支后：按序号找下一个尚未走完的分支（先向后找，再从头找）
+    findNextSetupLearningBranchIndexAfter(completedIndex) {
+        const branches = window.pgnParser.branches;
+        const n = branches.length;
+        for (let j = completedIndex + 1; j < n; j++) {
+            const id = branches[j].id || `branch_${j}`;
+            if (!this.setupLearningCompletedBranchIds.has(id)) {
+                return j;
+            }
+        }
+        for (let j = 0; j < completedIndex; j++) {
+            const id = branches[j].id || `branch_${j}`;
+            if (!this.setupLearningCompletedBranchIds.has(id)) {
+                return j;
+            }
+        }
+        return -1;
+    }
+
+    // 分支走完后自动回到起点并锁定「下一个」分支
+    setupLearningAdvanceToNextBranch(completedBranchIndex) {
+        if (!this.isSetupLearningMode || !window.pgnParser || !window.pgnParser.branches) {
+            return;
+        }
+        const branches = window.pgnParser.branches;
+        const completedId = branches[completedBranchIndex].id || `branch_${completedBranchIndex}`;
+        this.setupLearningCompletedBranchIds.add(completedId);
+        this.updateProgress();
+
+        const nextIdx = this.findNextSetupLearningBranchIndexAfter(completedBranchIndex);
+        if (nextIdx < 0) {
+            $('#errorToast')
+                .text('🎉 本局摆棋学习已全部完成！')
+                .css('background', '#9C27B0')
+                .fadeIn()
+                .delay(4000)
+                .fadeOut()
+                .promise()
+                .done(() => {
+                    $('#errorToast').css('background', '#ff4444');
+                });
+            this.setupLearningTargetBranchIndex = null;
+            this.showCompletionBanner();
+            return;
+        }
+
+        this.setupLearningTargetBranchIndex = nextIdx;
+
+        this.deselectSquare();
+        this.game.reset();
+        if (this.board) {
+            this.board.position('start');
+        }
+        $('#moveHistory').empty();
+        this.errorCount = 0;
+        this.branchErrorCounts.clear();
+        this.setupLearningHiddenBranches.clear();
+        this.recomputeSetupLearningAvailableAndHidden();
+        this.showFullNotation();
+        this.updateTurnIndicator();
+
+        $('#errorToast')
+            .text(`分支 ${completedBranchIndex + 1} 已完成 → 请继续学习分支 ${nextIdx + 1}`)
+            .css('background', '#28a745')
+            .fadeIn()
+            .delay(3500)
+            .fadeOut()
+            .promise()
+            .done(() => {
+                $('#errorToast').css('background', '#ff4444');
+            });
+
+        if (this.orientation === 'black' && this.availableBranches.length > 0) {
+            setTimeout(() => this.makeFirstComputerMoveForSetupLearning(), 500);
+        }
+    }
+
+    // 摆棋学习：主参考分支 = 当前局面下仍满足条件（前缀匹配、未完成、顺序目标）的「PGN 序号 i 最小」的一条
+    getSetupLearningPrimaryMatchingBranchRef() {
+        if (!window.pgnParser || !window.pgnParser.branches || window.pgnParser.branches.length === 0) {
+            return { branch: null, index: -1 };
+        }
+        const hist = this.game.history();
+        const branches = window.pgnParser.branches;
+        for (let i = 0; i < branches.length; i++) {
+            const branch = branches[i];
+            const branchId = branch.id || `branch_${i}`;
+            if (this.setupLearningCompletedBranchIds.has(branchId)) {
+                continue;
+            }
+            if (this.setupLearningTargetBranchIndex !== null && i !== this.setupLearningTargetBranchIndex) {
+                continue;
+            }
+            let prefixOk = true;
+            for (let j = 0; j < hist.length; j++) {
+                if (j >= branch.moves.length || branch.moves[j] !== hist[j]) {
+                    prefixOk = false;
+                    break;
+                }
+            }
+            if (!prefixOk) {
+                continue;
+            }
+            return { branch, index: i };
+        }
+        return { branch: null, index: -1 };
+    }
+
+    // 摆棋学习：右侧棋谱滚动到「序号最小的匹配分支」区块，避免 scrollHeight 滚到最底下（最大编号）
+    scrollSetupLearningNotationToPrimaryBranch() {
+        if (!this.isSetupLearningMode) return;
+        const container = document.getElementById('moveHistory');
+        if (!container) return;
+        const { index } = this.getSetupLearningPrimaryMatchingBranchRef();
+        const el = index >= 0 ? document.getElementById(`branch-${index}`) : null;
+        if (!el) {
+            container.scrollTop = 0;
+            return;
+        }
+        const cRect = container.getBoundingClientRect();
+        const eRect = el.getBoundingClientRect();
+        const margin = 8;
+        const delta = eRect.top - cRect.top - margin;
+        const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+        container.scrollTop = Math.max(0, Math.min(maxScroll, container.scrollTop + delta));
+    }
+
+    // 摆棋学习：沿「序号最小的匹配分支」后退一步
+    setupLearningStepPrev() {
+        if (!this.isSetupLearningMode) return;
+        if (this.game.history().length === 0) {
+            $('#errorToast').text('已在起始局面').css('background', '#6c757d').fadeIn().delay(2000).fadeOut().promise().done(() => {
+                $('#errorToast').css('background', '#ff4444');
+            });
+            return;
+        }
+        this.game.undo();
+        if (this.board) {
+            this.board.position(this.game.fen());
+        }
+        this.recomputeSetupLearningAvailableAndHidden();
+        this.showFullNotation();
+        this.updateTurnIndicator();
+    }
+
+    // 摆棋学习：沿「序号最小的匹配分支」前进一步（与手动走子同一套校验）
+    setupLearningStepNext() {
+        if (!this.isSetupLearningMode) return;
+        const { branch } = this.getSetupLearningPrimaryMatchingBranchRef();
+        if (!branch) {
+            $('#errorToast').text('没有可用的棋谱分支').css('background', '#dc3545').fadeIn().delay(2000).fadeOut().promise().done(() => {
+                $('#errorToast').css('background', '#ff4444');
+            });
+            return;
+        }
+        const h = this.game.history();
+        if (h.length >= branch.moves.length) {
+            $('#errorToast').text('已在当前展示分支末尾').css('background', '#6c757d').fadeIn().delay(2000).fadeOut().promise().done(() => {
+                $('#errorToast').css('background', '#ff4444');
+            });
+            return;
+        }
+        const nextSan = branch.moves[h.length];
+        const move = this.game.move(nextSan);
+        if (!move) {
+            $('#errorToast').text('无法执行该步，请检查局面').css('background', '#dc3545').fadeIn().delay(2500).fadeOut().promise().done(() => {
+                $('#errorToast').css('background', '#ff4444');
+            });
+            return;
+        }
+        if (this.board) {
+            this.board.position(this.game.fen());
+        }
+        this.handleSetupLearningMove(move);
+    }
+
     // 显示完整棋谱
     showFullNotation() {
         if (!window.pgnParser || !window.pgnParser.branches) {
@@ -2329,69 +2532,63 @@ class ChessBoard {
         const isMobile = window.innerWidth <= 768;
         console.log('移动端检测:', isMobile, '屏幕宽度:', window.innerWidth);
 
-        // 创建棋谱显示区域
+        const moveHistoryElement = $('#moveHistory');
+
         let notationHTML = '<div style="margin-bottom: 15px;"><strong>📚 完整棋谱：</strong></div>';
-        
-        // 获取当前走棋历史
+
         const currentHistory = this.game.history();
         console.log('当前走棋历史:', currentHistory);
-        
-        // 显示所有分支的棋谱，高亮当前走过的招法
+
         window.pgnParser.branches.forEach((branch, branchIndex) => {
             const branchId = branch.id || `branch_${branchIndex}`;
             const isHidden = this.setupLearningHiddenBranches.has(branchId);
-            
+
             console.log(`分支 ${branchIndex + 1}:`, branch.moves, '隐藏状态:', isHidden);
-            
-            // 移动端优化样式
+
             const mobileStyle = isMobile ? 'font-size: 12px; line-height: 1.4;' : '';
-            
-            // 为隐藏的分支添加特殊样式和说明
+
             let branchStyle = `margin-bottom: 10px; padding: 8px; border-radius: 4px; border-left: 4px solid; ${mobileStyle}`;
             let borderColor = '#dee2e6';
             let backgroundColor = '#f8f9fa';
             let opacity = '1';
             let statusText = '';
-            
+
             if (isHidden) {
                 borderColor = '#dc3545';
                 backgroundColor = '#f8d7da';
                 opacity = '0.6';
                 statusText = ' (已隐藏)';
             }
-            
+
             branchStyle += `background: ${backgroundColor}; border-left-color: ${borderColor}; opacity: ${opacity};`;
-            
+
             notationHTML += `<div id="branch-${branchIndex}" style="${branchStyle}">`;
-            
+
             notationHTML += `<strong>分支 ${branchIndex + 1}${statusText}:</strong> `;
-            
-            // 为每个招法添加span标签，便于高亮
+
             branch.moves.forEach((move, moveIndex) => {
                 const moveId = `branch-${branchIndex}-move-${moveIndex}`;
                 const isCurrentMove = moveIndex < currentHistory.length && currentHistory[moveIndex] === move;
                 const isPastMove = moveIndex < currentHistory.length;
-                
+
                 let moveClass = '';
                 if (isCurrentMove) {
                     moveClass = 'current-move';
                 } else if (isPastMove) {
                     moveClass = 'past-move';
                 }
-                
-                // 移动端优化招法显示
+
                 const moveStyle = isMobile ? 'font-size: 11px; padding: 2px 4px; margin: 1px; min-width: 35px; text-align: center;' : '';
-                
+
                 notationHTML += `<span id="${moveId}" class="chess-move ${moveClass}" style="${moveStyle}">${move}</span> `;
             });
-            
+
             notationHTML += '</div>';
         });
 
         console.log('棋谱HTML生成完成，长度:', notationHTML.length);
 
         // 在走法历史区域显示棋谱
-        const moveHistoryElement = $('#moveHistory');
         if (moveHistoryElement.length > 0) {
             moveHistoryElement.html(notationHTML);
             console.log('棋谱已显示到moveHistory区域');
@@ -2410,9 +2607,9 @@ class ChessBoard {
             if (displayedBranches.length !== totalBranches) {
                 console.warn('警告：显示的分支数量与总分支数量不匹配');
             }
-            
+
             if (hiddenBranches > 0 && this.isSetupLearningMode) {
-                console.log('注意：当前有隐藏分支，这些分支在棋谱中会显示为红色边框');
+                console.log('注意：摆棋学习下不匹配的走法会标为已隐藏；主参考线为序号最小的匹配分支');
             }
         } else {
             console.error('moveHistory元素未找到');
@@ -2478,70 +2675,60 @@ class ChessBoard {
         document.head.appendChild(style);
     }
 
-    // 高亮当前分支在棋谱中的显示
+    // 高亮当前分支在棋谱中的显示（摆棋学习：序号最小的匹配分支）
     highlightCurrentBranchInNotation() {
         if (!this.isSetupLearningMode) return;
-        
-        const currentHistory = this.game.history();
-        if (currentHistory.length === 0) return;
-        
-        // 找到匹配当前历史的分支
-        let matchingBranchIndex = -1;
-        for (let i = 0; i < window.pgnParser.branches.length; i++) {
-            const branch = window.pgnParser.branches[i];
-            let isMatch = true;
-            
-            for (let j = 0; j < currentHistory.length; j++) {
-                if (j >= branch.moves.length || branch.moves[j] !== currentHistory[j]) {
-                    isMatch = false;
-                    break;
-                }
-            }
-            
-            if (isMatch) {
-                matchingBranchIndex = i;
-                break;
-            }
-        }
-        
-        // 移除所有分支的高亮
+
+        const { index: branchIndex } = this.getSetupLearningPrimaryMatchingBranchRef();
+
         document.querySelectorAll('[id^="branch-"]').forEach(element => {
-            element.classList.remove('branch-active');
+            if (/^branch-\d+$/.test(element.id)) {
+                element.classList.remove('branch-active');
+            }
         });
-        
-        // 高亮匹配的分支
-        if (matchingBranchIndex >= 0) {
-            const branchElement = document.getElementById(`branch-${matchingBranchIndex}`);
+
+        if (branchIndex >= 0) {
+            const branchElement = document.getElementById(`branch-${branchIndex}`);
             if (branchElement) {
                 branchElement.classList.add('branch-active');
             }
         }
-        
-        // 更新招法高亮
+
         this.updateMoveHighlights();
+        this.scrollSetupLearningNotationToPrimaryBranch();
     }
 
     // 更新招法高亮
     updateMoveHighlights() {
         const currentHistory = this.game.history();
-        
-        // 清除所有招法的高亮
+
         document.querySelectorAll('.chess-move').forEach(element => {
             element.classList.remove('past-move', 'current-move');
         });
-        
-        // 为每个分支更新招法高亮
+
+        let primaryBranchIndex = -1;
+        if (this.isSetupLearningMode) {
+            primaryBranchIndex = this.getSetupLearningPrimaryMatchingBranchRef().index;
+        }
+
         window.pgnParser.branches.forEach((branch, branchIndex) => {
             branch.moves.forEach((move, moveIndex) => {
                 const moveElement = document.getElementById(`branch-${branchIndex}-move-${moveIndex}`);
                 if (!moveElement) return;
-                
+
                 if (moveIndex < currentHistory.length) {
                     if (currentHistory[moveIndex] === move) {
-                        // 当前招法
-                        moveElement.classList.add('current-move');
+                        if (
+                            this.isSetupLearningMode &&
+                            primaryBranchIndex >= 0 &&
+                            branchIndex !== primaryBranchIndex
+                        ) {
+                            // 其它变线与主线着法相同：只用弱高亮，避免看起来像「最后一条分支」才是主线
+                            moveElement.classList.add('past-move');
+                        } else {
+                            moveElement.classList.add('current-move');
+                        }
                     } else {
-                        // 过去的招法（不匹配）
                         moveElement.classList.add('past-move');
                     }
                 }
@@ -2722,28 +2909,16 @@ class ChessBoard {
             return;
         }
         
-        let message = '🎉 分支完成！';
-        if (completedBranch) {
-            message += ` (分支 ${completedBranchIndex + 1})`;
-        }
-        
+        const message = `🎉 分支 ${completedBranchIndex + 1} 完成！`;
         console.log('分支完成消息:', message);
-        
-        // 显示分支完成提示
-        $('#errorToast').text(message).css('background', '#9C27B0').fadeIn().delay(3000).fadeOut().promise().done(() => {
+        $('#errorToast').text(message).css('background', '#9C27B0').fadeIn().delay(1200).fadeOut().promise().done(() => {
             $('#errorToast').css('background', '#ff4444');
         });
-        
-        // 延迟后提示用户点击回到初始位置
+
+        console.log('摆棋学习模式：分支完成，自动进入下一分支');
         setTimeout(() => {
-            const resetMessage = '✅ 分支已走完，请点击"回到初始位置"继续学习其他分支';
-            $('#errorToast').text(resetMessage).css('background', '#17a2b8').fadeIn().delay(5000).fadeOut().promise().done(() => {
-                $('#errorToast').css('background', '#ff4444');
-            });
-        }, 3000);
-        
-        // 不再自动回到初始位置，等待用户手动操作
-        console.log('摆棋学习模式：分支完成，等待用户手动回到初始位置');
+            this.setupLearningAdvanceToNextBranch(completedBranchIndex);
+        }, 1300);
     }
 
     // 查找两个分支的公共部分
@@ -3147,9 +3322,13 @@ class ChessBoard {
     makeFirstComputerMoveForSetupLearning() {
         if (!this.isSetupLearningMode || !window.pgnParser || !window.pgnParser.branches) return;
         
-        // 获取第一手可能的走法
+        // 获取第一手可能的走法（仅当前可用的未完成分支）
         const firstMoves = new Set();
-        for (const branch of window.pgnParser.branches) {
+        const sourceBranches =
+            this.availableBranches && this.availableBranches.length > 0
+                ? this.availableBranches
+                : window.pgnParser.branches;
+        for (const branch of sourceBranches) {
             if (branch.moves.length > 0) {
                 firstMoves.add(branch.moves[0]);
             }
@@ -3166,8 +3345,10 @@ class ChessBoard {
                 if (this.board) {
                     this.board.position(this.game.fen()); // 更新棋盘位置
                 }
-                
-                // 更新走法历史
+
+                this.recomputeSetupLearningAvailableAndHidden();
+
+                // 更新走法历史（摆棋学习内会重绘棋谱）
                 this.updateMoveHistory(move);
                 this.updateTurnIndicator();
                 
